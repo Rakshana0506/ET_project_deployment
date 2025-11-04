@@ -47,7 +47,7 @@ pycparser
 pyparsing==3.2.5
 requests==2.32.5
 setuptools==80.9.0
-six==1.18.0
+six  # <-- CORRECTED LINE
 tenacity
 tornado==6.5.2
 traitlets
