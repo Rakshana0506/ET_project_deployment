@@ -221,9 +221,9 @@ def register_user(n_clicks, name, email, username, password):
         sql_insert_stats = f"""
             INSERT INTO user_stats (
                 username, debates_won, debates_lost, debates_drawn,
-                avg_logicalConsistency, avg_evidenceAndExamples,
-                avg_clarityAndConcision, avg_rebuttalEffectiveness,
-                avg_overallPersuasiveness
+                avg_logicalconsistency, avg_evidenceandexamples,
+                avg_clarityandconcision, avg_rebuttaleffectiveness,
+                avg_overallpersuasiveness
             ) VALUES ({ph}, 0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0)
             """
         cur.execute(sql_insert_stats, (username,))
@@ -826,7 +826,7 @@ def start_judged_debate(n_clicks, topic, turns, p_a_name, p_a_stance, p_b_name, 
     debate_state = {
         'mode': 'judge', 
         'topic': topic,
-        'user_stance': p_a_stance,        # Player A's stance
+        'user_stance': p_a_stance,      # Player A's stance
         'opponent_stance': p_b_stance,    # Player B's stance
         'player_A_name': p_a_name,
         'player_B_name': p_b_name,
@@ -918,7 +918,7 @@ def handle_judged_turn(n_clicks, user_input, session_data, current_chat, timer_d
             # Return 9 values
             return (current_chat, "", session_data, turn_display, None, None, 
                     True, True, end_button_style)
-        # --- *** END MODIFICATION *** ---
+        # --- *** END MODIFICATION ---
 
         try:
             judgment = get_judgment(debate_state, chat_history, google_key)
@@ -1091,10 +1091,19 @@ def update_user_stats(username, judgment):
         user_scores = judgment['scores'].get('User', {})
         total_debates = user_stats['debates_won'] + user_stats['debates_lost'] + user_stats['debates_drawn']
 
+        # --- *** START OF FIX *** ---
+        # The 'skill' (camelCase) is for the JSON dict 'user_scores'
+        # The 'stat_col_db' (lowercase) is for the DB dict 'user_stats'
         for skill in ['logicalConsistency', 'evidenceAndExamples', 'clarityAndConcision',
                       'rebuttalEffectiveness', 'overallPersuasiveness']:
-            stat_col = f'avg_{skill}'
-            current_avg = user_stats[stat_col]
+            
+            # DB key is lowercase, e.g., "avg_logicalconsistency"
+            stat_col_db = f'avg_{skill.lower()}' 
+
+            # Read current avg from DB dict using lowercase key
+            current_avg = user_stats[stat_col_db] 
+            
+            # Get new score from JSON dict using camelCase key
             new_score = user_scores.get(skill, current_avg) 
             
             try:
@@ -1104,16 +1113,17 @@ def update_user_stats(username, judgment):
             
             if total_debates > 0:
                 new_avg = ((current_avg * (total_debates - 1)) + new_score) / total_debates
-                user_stats[stat_col] = new_avg
+                # Write new avg to DB dict using lowercase key
+                user_stats[stat_col_db] = new_avg
         
         cur = con.cursor()
         
         sql_update_stats = f"""
             UPDATE user_stats SET
                 debates_won = {ph}, debates_lost = {ph}, debates_drawn = {ph},
-                avg_logicalConsistency = {ph}, avg_evidenceAndExamples = {ph},
-                avg_clarityAndConcision = {ph}, avg_rebuttalEffectiveness = {ph},
-                avg_overallPersuasiveness = {ph}
+                avg_logicalconsistency = {ph}, avg_evidenceandexamples = {ph},
+                avg_clarityandconcision = {ph}, avg_rebuttaleffectiveness = {ph},
+                avg_overallpersuasiveness = {ph}
             WHERE username = {ph}
             """
         
@@ -1121,12 +1131,13 @@ def update_user_stats(username, judgment):
             sql_update_stats,
             (
                 user_stats['debates_won'], user_stats['debates_lost'], user_stats['debates_drawn'],
-                user_stats['avg_logicalConsistency'], user_stats['avg_evidenceAndExamples'],
-                user_stats['avg_clarityAndConcision'], user_stats['avg_rebuttalEffectiveness'],
-                user_stats['avg_overallPersuasiveness'],
+                user_stats['avg_logicalconsistency'], user_stats['avg_evidenceandexamples'],
+                user_stats['avg_clarityandconcision'], user_stats['avg_rebuttaleffectiveness'],
+                user_stats['avg_overallpersuasiveness'],
                 username
             )
         )
+        # --- *** END OF FIX *** ---
         con.commit()
         print(f"Stats updated for {username} in the database.")
     except Exception as e:
@@ -1167,9 +1178,9 @@ def render_practice_dashboard(pathname, session_data):
         user_stats_row = cur.fetchone()
         if user_stats_row is None:
             user_stats = { 'debates_won': 0, 'debates_lost': 0, 'debates_drawn': 0,
-                           'avg_logicalConsistency': 0, 'avg_evidenceAndExamples': 0,
-                           'avg_clarityAndConcision': 0, 'avg_rebuttalEffectiveness': 0,
-                           'avg_overallPersuasiveness': 0 }
+                           'avg_logicalconsistency': 0, 'avg_evidenceandexamples': 0,
+                           'avg_clarityandconcision': 0, 'avg_rebuttaleffectiveness': 0,
+                           'avg_overallpersuasiveness': 0 }
         else:
             user_stats = user_stats_row
     except Exception as e:
@@ -1188,11 +1199,14 @@ def render_practice_dashboard(pathname, session_data):
     layout = [
         html.H4(f"Your All-Time Performance ({username})"),
         html.Div([
-            daq.Gauge(label="Logical Consistency", value=user_stats['avg_logicalConsistency'], max=10, min=0, color=gauge_colors),
-            daq.Gauge(label="Evidence & Examples", value=user_stats['avg_evidenceAndExamples'], max=10, min=0, color=gauge_colors),
-            daq.Gauge(label="Clarity & Concision", value=user_stats['avg_clarityAndConcision'], max=10, min=0, color=gauge_colors),
-            daq.Gauge(label="Rebuttal Effectiveness", value=user_stats['avg_rebuttalEffectiveness'], max=10, min=0, color=gauge_colors),
-            daq.Gauge(label="Overall Persuasiveness", value=user_stats['avg_overallPersuasiveness'], max=10, min=0, color=gauge_colors),
+            # --- *** START OF FIX *** ---
+            # Keys must be lowercase to match the database
+            daq.Gauge(label="Logical Consistency", value=user_stats['avg_logicalconsistency'], max=10, min=0, color=gauge_colors),
+            daq.Gauge(label="Evidence & Examples", value=user_stats['avg_evidenceandexamples'], max=10, min=0, color=gauge_colors),
+            daq.Gauge(label="Clarity & Concision", value=user_stats['avg_clarityandconcision'], max=10, min=0, color=gauge_colors),
+            daq.Gauge(label="Rebuttal Effectiveness", value=user_stats['avg_rebuttaleffectiveness'], max=10, min=0, color=gauge_colors),
+            daq.Gauge(label="Overall Persuasiveness", value=user_stats['avg_overallpersuasiveness'], max=10, min=0, color=gauge_colors),
+            # --- *** END OF FIX *** ---
         ], className='gauge-grid'),
         html.P(f"Record (W-L-D): {user_stats['debates_won']}-{user_stats['debates_lost']}-{user_stats['debates_drawn']}",
                style={'textAlign': 'center', 'fontWeight': 'bold', 'marginTop': '20px', 'fontSize': '1.2rem'}),
