@@ -29,18 +29,18 @@ def get_db_connection():
     Establishes a connection to the PostgreSQL database on Render
     or a local SQLite DB for development (if DATABASE_URL is not set).
     """
-    DATABASE_URL = os.environ.get('DATABASE_URL')
+    database_url = os.environ.get('DATABASE_URL')
 
-    if DATABASE_URL:
+    if database_url:
         # --- PRODUCTION (Render) ---
-        con = psycopg2.connect(DATABASE_URL)
+        con = psycopg2.connect(database_url)
         con.cursor_factory = DictCursor # Allows accessing columns by name
     else:
         # --- LOCAL (Development) ---
         print("WARNING: DATABASE_URL not set. Falling back to local app_data.db")
-        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-        DB_FILE = os.path.join(BASE_DIR, 'app_data.db')
-        con = sqlite3.connect(DB_FILE)
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        db_file = os.path.join(base_dir, 'app_data.db')
+        con = sqlite3.connect(db_file)
         con.row_factory = sqlite3.Row
     
     return con
@@ -54,7 +54,7 @@ user_profile_for_ai = {
 }
 
 # --- MASTER PROMPTS ---
-DEBATE_OPPONENT_PROMPT = """
+debate_opponent_prompt = """
 You are a highly skilled, assertive, and competitive debater AI.
 Your *only* role is to engage in a formal debate with the human user and try to win.
 **DEBATE RULES:**
@@ -76,7 +76,7 @@ Your *only* role is to engage in a formal debate with the human user and try to 
 You will receive the chat history. Your job is to provide the *next* logical rebuttal from your assigned stance.
 """
 
-DEBATE_JUDGE_PROMPT = """
+debate_judge_prompt = """
 You are an impartial, expert debate judge. Your sole task is to analyze the following debate transcript and provide a detailed evaluation in a specific JSON format.
 **DEBATE DETAILS:**
 -   **Topic:** {topic}
@@ -92,23 +92,23 @@ Evaluate both the 'User' and the 'AI' on the following five criteria.
 You MUST be strict and fair. Scores range from 0 (non-existent) to 10 (excellent).
 **If an argument is non-existent, irrelevant (e.g., just says "hi"), or makes no attempt, you MUST give it a score of 0.**
 
-1.  **logicalConsistency (Score 0-10):**
+1.  **logical_consistency (Score 0-10):**
     * **Focus:** The integrity of the argument's structure and its internal coherence.
     * **Judicial Insight (Referencing Fallacies):** Score based on how well the debater maintained a consistent thesis without introducing **internal contradictions** or relying on obvious logical **fallacies** (e.g., *slippery slope, circular reasoning, false dichotomy, hasty generalization*). A high score reflects arguments where the premises directly and unequivocally support the conclusion throughout the debate. Low scores indicate a fundamental breakdown in the logical chain, a significant shift in the central claim's definition, or the use of **non-sequiturs** (where the conclusion does not follow from the premise). **A score of 0 MUST be given for non-existent arguments.**
 
-2.  **evidenceAndExamples (Score 0-10):**
+2.  **evidence_and_examples (Score 0-10):**
     * **Focus:** The quality, relevance, and strategic deployment of supporting material.
     * **Judicial Insight (Referencing Toulmin/Credibility):** Score based on the **specificity**, **authority**, and **timeliness** of the evidence. Was the supporting data the *Grounds* for the *Claim* (Toulmin Model)? Did the debater move beyond mere assertion by providing sufficient **Warrant** (the link between evidence and claim)? High scores are reserved for those who cite specific, verifiable statistics, academic studies, or detailed, relevant historical precedents. Low scores result from relying on vague phrases ("Studies show...") or using anecdotal/emotional evidence where empirical facts are required. **A score of 0 MUST be given if no evidence is presented.**
 
-3.  **clarityAndConcision (Score 0-10):**
+3.  **clarity_and_concision (Score 0-10):**
     * **Focus:** The structural effectiveness and communicative efficiency of the argument.
     * **Judicial Insight (Referencing Rhetoric/Flowing):** Score based on the debater's use of **signposting** (e.g., "My first point is...", "Moving to my opponent's claim about X..."), clear topic sentences, and avoiding verbose or tangential explanations. A perfect score means the argument was immediately understandable, powerful, and free of filler, allowing the opponent and judge to easily **"flow"** (take notes on) the key claims. Low scores are given for rambling, confusing complexity, excessive jargon, or a lack of clear separation between arguments. **A score of 0 MUST be given for irrelevant or non-existent arguments.**
 
-4.  **rebuttalEffectiveness (Score 0-10):**
+4.  **rebuttal_effectiveness (Score 0-10):**
     * **Focus:** The ability to directly engage with and dismantle the opponent's specific arguments.
     * **Judicial Insight (Referencing Line-by-Line):** Score based on a **"line-by-line"** approach rather than merely restating one's own position. Did the debater successfully isolate the opponent's core **Mechanism** or **Impact** and explain *why* it fails, rather than simply disagreeing? The most effective rebuttals challenge the opponent's **Warrant** or provide a strong, comparative counter-impact. Low scores are given for **shadow boxing** (attacking an argument the opponent never made) or dropping (failing to address) crucial, damaging points. **A score of 0 MUST be given if no rebuttal is attempted.**
 
-5.  **overallPersuasiveness (Score 0-10):**
+5.  **overall_persuasiveness (Score 0-10):**
     * **Focus:** The holistic assessment of the argument's impact and the establishment of a superior position.
     * **Judicial Insight (Referencing Comparative Advantage):** This score is the final synthesis. It measures which debater more effectively established a **central narrative** (or *Framework*) and demonstrated a **comparative advantage**—proving their solution or view is *better* than the opponent's, even if the opponent's claims are partially true. A high score means the debater successfully **"weighed"** the key issues, showing why their metrics for success (e.g., public safety over economic cost) should be prioritized by the judge. The winning debater should be the one who best articulated *why* their side *matters more*. **A score of 0 MUST be given for non-existent arguments.**
 
@@ -118,37 +118,37 @@ The JSON structure must be *exactly* as follows:
 {{
   "scores": {{
     "User": {{
-      "logicalConsistency": <score_0_to_10>,
-      "evidenceAndExamples": <score_0_to_10>,
-      "clarityAndConcision": <score_0_to_10>,
-      "rebuttalEffectiveness": <score_0_to_10>,
-      "overallPersuasiveness": <score_0_to_10>
+      "logical_consistency": <score_0_to_10>,
+      "evidence_and_examples": <score_0_to_10>,
+      "clarity_and_concision": <score_0_to_10>,
+      "rebuttal_effectiveness": <score_0_to_10>,
+      "overall_persuasiveness": <score_0_to_10>
     }},
     "AI": {{
-      "logicalConsistency": <score_0_to_10>,
-      "evidenceAndExamples": <score_0_to_10>,
-      "clarityAndConcision": <score_0_to_10>,
-      "rebuttalEffectiveness": <score_0_to_10>,
-      "overallPersuasiveness": <score_0_to_10>
+      "logical_consistency": <score_0_to_10>,
+      "evidence_and_examples": <score_0_to_10>,
+      "clarity_and_concision": <score_0_to_10>,
+      "rebuttal_effectiveness": <score_0_to_10>,
+      "overall_persuasiveness": <score_0_to_10>
     }}
   }},
   "reasoning": {{
-    "strongestArgumentUser": "<Briefly describe the 'User's' best point. If 0, state 'No argument presented.'>",
-    "strongestArgumentAI": "<Briefly describe the 'AI's' best point. If 0, state 'No argument presented.'>",
-    "weakestArgumentUser": "<Briefly describe the 'User's' weakest point. If 0, state 'No argument presented.'>",
-    "weakestArgumentAI": "<Briefly describe the 'AI's' weakest point. If 0, state 'No argument presented.'>",
-    "rebuttalAnalysis": "<A summary of who was more effective at rebutting. If neither, state 'No rebuttals were made.'>",
-    "overallWinner": "<'User', 'AI', or 'Draw'>",
-    "constructiveFeedbackUser": "<One or two specific, actionable suggestions for the 'User' to improve. If 0, feedback can be 'No valid argument was presented.'>",
-    "constructiveFeedbackAI": "<One or two specific, actionable suggestions for the 'AI' to improve. If 0, feedback can be 'No valid argument was presented.'>"
+    "strongest_argument_user": "<Briefly describe the 'User's' best point. If 0, state 'No argument presented.'>",
+    "strongest_argument_ai": "<Briefly describe the 'AI's' best point. If 0, state 'No argument presented.'>",
+    "weakest_argument_user": "<Briefly describe the 'User's' weakest point. If 0, state 'No argument presented.'>",
+    "weakest_argument_ai": "<Briefly describe the 'AI's' weakest point. If 0, state 'No argument presented.'>",
+    "rebuttal_analysis": "<A summary of who was more effective at rebutting. If neither, state 'No rebuttals were made.'>",
+    "overall_winner": "<'User', 'AI', or 'Draw'>",
+    "constructive_feedback_user": "<One or two specific, actionable suggestions for the 'User' to improve. If 0, feedback can be 'No valid argument was presented.'>",
+    "constructive_feedback_ai": "<One or two specific, actionable suggestions for the 'AI' to improve. If 0, feedback can be 'No valid argument was presented.'>"
   }}
 }}
 **INSTRUCTIONS FOR JSON FIELDS:**
 -   All scores: Must be a single number (integer or float) between 0 and 10.
 -   reasoning fields: Provide concise, objective analysis.
--   overallWinner: Must be *one* of the three exact strings: "User", "AI", or "Draw".
--   **constructiveFeedbackUser**: Provide 1-2 concise, actionable pieces of advice for the 'User'.
--   **constructiveFeedbackAI**: Provide 1-2 concise, actionable pieces of advice for the 'AI'.
+-   overall_winner: Must be *one* of the three exact strings: "User", "AI", or "Draw".
+-   **constructive_feedback_user**: Provide 1-2 concise, actionable pieces of advice for the 'User'.
+-   **constructive_feedback_ai**: Provide 1-2 concise, actionable pieces of advice for the 'AI'.
 """
 
 # --- *** NEW: HELPER FUNCTION TO SAVE DEBATES *** ---
@@ -164,7 +164,7 @@ def save_debate_to_db(username, debate_state, chat_history, final_results):
         results_json = json.dumps(final_results)
     except Exception as e:
         print(f"CRITICAL ERROR: Could not serialize debate data to JSON: {e}")
-        return 
+        return
 
     con = get_db_connection()
     ph = '?' if isinstance(con, sqlite3.Connection) else '%s'
@@ -221,9 +221,9 @@ def register_user(n_clicks, name, email, username, password):
         sql_insert_stats = f"""
             INSERT INTO user_stats (
                 username, debates_won, debates_lost, debates_drawn,
-                avg_logicalConsistency, avg_evidenceAndExamples,
-                avg_clarityAndConcision, avg_rebuttalEffectiveness,
-                avg_overallPersuasiveness
+                avg_logical_consistency, avg_evidence_and_examples,
+                avg_clarity_and_concision, avg_rebuttal_effectiveness,
+                avg_overall_persuasiveness
             ) VALUES ({ph}, 0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0)
             """
         cur.execute(sql_insert_stats, (username,))
@@ -619,7 +619,7 @@ def start_practice_debate(n_clicks, topic, stance, turns, session_data):
     session_data['chat_history'] = [] 
     session_data['final_results'] = None
     initial_message = html.Div(f"Debate started on: '{topic}'. You are arguing '{stance}'. Waiting for your first argument.",
-                               style={'fontStyle': 'italic', 'color': 'grey', 'textAlign': 'center'})
+                                 style={'fontStyle': 'italic', 'color': 'grey', 'textAlign': 'center'})
     
     return ({'display': 'none'}, {'display': 'block'},
             f"Topic: {topic}", [initial_message], session_data,
@@ -661,6 +661,7 @@ def handle_practice_turn(n_clicks, user_input, session_data, current_chat, timer
     if not google_key:
         error_msg = "ERROR: Google API Key not set. Please go to the Settings page."
         current_chat.append(html.P(error_msg, style={'color': 'red', 'textAlign': 'center'}))
+        # Return 9 values
         return current_chat, "", no_update, None, no_update, no_update, no_update, no_update, None
     
     try:
@@ -668,6 +669,7 @@ def handle_practice_turn(n_clicks, user_input, session_data, current_chat, timer
     except Exception as e:
         error_msg = f"ERROR: Invalid Google API Key: {e}"
         current_chat.append(html.P(error_msg, style={'color': 'red', 'textAlign': 'center'}))
+        # Return 9 values
         return current_chat, "", no_update, None, no_update, no_update, no_update, no_update, None
     # --- *** END MODIFICATION *** ---
     
@@ -691,7 +693,7 @@ def handle_practice_turn(n_clicks, user_input, session_data, current_chat, timer
     # 3. Check for end of debate
     if debate_state['current_turn'] >= debate_state['total_turns']:
         
-        opponent_system_prompt = DEBATE_OPPONENT_PROMPT.format(
+        opponent_system_prompt = debate_opponent_prompt.format(
             topic=debate_state['topic'],
             user_stance=debate_state['user_stance'], 
             opponent_stance=debate_state['opponent_stance']
@@ -721,7 +723,7 @@ def handle_practice_turn(n_clicks, user_input, session_data, current_chat, timer
             # --- *** MODIFIED: Pass key to judge *** ---
             judgment = get_judgment(debate_state, chat_history, google_key)
         except Exception as e:
-            print(f"--- handle_turn CAUGHT AN ERROR: {e} ---")
+            print(f"--- handle_practice_turn CAUGHT AN ERROR: {e} ---")
             judgment = {'error': f'Judge API/Parsing failed: {e}', 'raw_text': 'N/A'}
 
         # 5. Save final results
@@ -752,12 +754,13 @@ def handle_practice_turn(n_clicks, user_input, session_data, current_chat, timer
         send_button_disabled = True
         textarea_disabled = True
         
+        # Return 9 values
         return current_chat, "", session_data, None, no_update, results_button_style, send_button_disabled, textarea_disabled, None
 
     # --- NORMAL TURN LOGIC (AI Responds) ---
     
     # 4. Get AI response
-    opponent_system_prompt = DEBATE_OPPONENT_PROMPT.format(
+    opponent_system_prompt = debate_opponent_prompt.format(
         topic=debate_state['topic'],
         user_stance=debate_state['user_stance'], 
         opponent_stance=debate_state['opponent_stance']
@@ -781,6 +784,7 @@ def handle_practice_turn(n_clicks, user_input, session_data, current_chat, timer
     chat_history.append({'role': 'model', 'parts': [ai_response_text]})
     session_data['chat_history'] = chat_history 
     
+    # Return 9 values
     return current_chat, "", session_data, None, no_update, results_button_style, send_button_disabled, textarea_disabled, None
 
 
@@ -828,8 +832,8 @@ def start_judged_debate(n_clicks, topic, turns, p_a_name, p_a_stance, p_b_name, 
         'topic': topic,
         'user_stance': p_a_stance,        # Player A's stance
         'opponent_stance': p_b_stance,    # Player B's stance
-        'player_A_name': p_a_name,
-        'player_B_name': p_b_name,
+        'player_a_name': p_a_name,
+        'player_b_name': p_b_name,
         'total_turns': int(turns) * 2,    # Total turns for *both* players
         'current_turn_count': 0,
         'current_player_role': 'user'     # 'user' = Player A, 'model' = Player B
@@ -840,7 +844,7 @@ def start_judged_debate(n_clicks, topic, turns, p_a_name, p_a_stance, p_b_name, 
     session_data['final_results'] = None
     
     initial_message = html.Div(f"Debate started on: '{topic}'.",
-                               style={'fontStyle': 'italic', 'color': 'grey', 'textAlign': 'center'})
+                                 style={'fontStyle': 'italic', 'color': 'grey', 'textAlign': 'center'})
     
     turn_display = f"It is {p_a_name}'s turn ({p_a_stance})"
     
@@ -875,6 +879,7 @@ def handle_judged_turn(n_clicks, user_input, session_data, current_chat, timer_d
     end_button_style = {'display': 'none', 'marginTop': '10px'}
 
     if not user_input or not session_data or 'debate_state' not in session_data:
+        # Return 9 values
         return no_update, "", no_update, no_update, None, None, no_update, no_update, no_update
 
     debate_state = session_data['debate_state']
@@ -884,11 +889,11 @@ def handle_judged_turn(n_clicks, user_input, session_data, current_chat, timer_d
     current_role = debate_state['current_player_role']
     
     if current_role == 'user': # Player A's turn
-        player_name = debate_state['player_A_name']
+        player_name = debate_state['player_a_name']
         player_stance = debate_state['user_stance']
         alignment = 'right'
     else: # Player B's turn
-        player_name = debate_state['player_B_name']
+        player_name = debate_state['player_b_name']
         player_stance = debate_state['opponent_stance']
         alignment = 'left'
 
@@ -950,11 +955,11 @@ def handle_judged_turn(n_clicks, user_input, session_data, current_chat, timer_d
         # Not the end, switch turns
         if current_role == 'user':
             debate_state['current_player_role'] = 'model' # Switch to Player B
-            next_player_name = debate_state['player_B_name']
+            next_player_name = debate_state['player_b_name']
             next_player_stance = debate_state['opponent_stance']
         else:
             debate_state['current_player_role'] = 'user' # Switch to Player A
-            next_player_name = debate_state['player_A_name']
+            next_player_name = debate_state['player_a_name']
             next_player_stance = debate_state['user_stance']
         
         turn_display = f"It is {next_player_name}'s turn ({next_player_stance})"
@@ -962,6 +967,7 @@ def handle_judged_turn(n_clicks, user_input, session_data, current_chat, timer_d
     session_data['debate_state'] = debate_state
     session_data['chat_history'] = chat_history 
 
+    # Return 9 values
     return (current_chat, "", session_data, turn_display, None, None, 
             send_button_disabled, textarea_disabled, end_button_style)
 
@@ -1000,7 +1006,7 @@ def get_judgment(debate_state, chat_history, google_key):
         
         print("--- V11.2: get_judgment HAS BUILT GENERIC TRANSCRIPT ---")
 
-        judge_prompt = DEBATE_JUDGE_PROMPT.format(
+        judge_prompt = debate_judge_prompt.format(
             topic=debate_state['topic'],
             user_stance=debate_state['user_stance'],
             ai_stance=debate_state['opponent_stance'],
@@ -1079,7 +1085,7 @@ def update_user_stats(username, judgment):
             return
 
         user_stats = stats_df.iloc[0].to_dict()
-        winner = judgment['reasoning'].get('overallWinner', 'Draw')
+        winner = judgment['reasoning'].get('overall_winner', 'Draw')
         
         if winner == 'User':
             user_stats['debates_won'] += 1
@@ -1091,9 +1097,11 @@ def update_user_stats(username, judgment):
         user_scores = judgment['scores'].get('User', {})
         total_debates = user_stats['debates_won'] + user_stats['debates_lost'] + user_stats['debates_drawn']
 
-        for skill in ['logicalConsistency', 'evidenceAndExamples', 'clarityAndConcision',
-                      'rebuttalEffectiveness', 'overallPersuasiveness']:
+        for skill in ['logical_consistency', 'evidence_and_examples', 'clarity_and_concision',
+                      'rebuttal_effectiveness', 'overall_persuasiveness']:
             stat_col = f'avg_{skill}'
+            # Note: DB columns are snake_case, but the incoming JSON keys were camelCase, which we converted in the prompt.
+            # We must use the JSON keys from the prompt in the get call here, which are now snake_case.
             current_avg = user_stats[stat_col]
             new_score = user_scores.get(skill, current_avg) 
             
@@ -1111,9 +1119,9 @@ def update_user_stats(username, judgment):
         sql_update_stats = f"""
             UPDATE user_stats SET
                 debates_won = {ph}, debates_lost = {ph}, debates_drawn = {ph},
-                avg_logicalConsistency = {ph}, avg_evidenceAndExamples = {ph},
-                avg_clarityAndConcision = {ph}, avg_rebuttalEffectiveness = {ph},
-                avg_overallPersuasiveness = {ph}
+                avg_logical_consistency = {ph}, avg_evidence_and_examples = {ph},
+                avg_clarity_and_concision = {ph}, avg_rebuttal_effectiveness = {ph},
+                avg_overall_persuasiveness = {ph}
             WHERE username = {ph}
             """
         
@@ -1121,9 +1129,9 @@ def update_user_stats(username, judgment):
             sql_update_stats,
             (
                 user_stats['debates_won'], user_stats['debates_lost'], user_stats['debates_drawn'],
-                user_stats['avg_logicalConsistency'], user_stats['avg_evidenceAndExamples'],
-                user_stats['avg_clarityAndConcision'], user_stats['avg_rebuttalEffectiveness'],
-                user_stats['avg_overallPersuasiveness'],
+                user_stats['avg_logical_consistency'], user_stats['avg_evidence_and_examples'],
+                user_stats['avg_clarity_and_concision'], user_stats['avg_rebuttal_effectiveness'],
+                user_stats['avg_overall_persuasiveness'],
                 username
             )
         )
@@ -1167,9 +1175,9 @@ def render_practice_dashboard(pathname, session_data):
         user_stats_row = cur.fetchone()
         if user_stats_row is None:
             user_stats = { 'debates_won': 0, 'debates_lost': 0, 'debates_drawn': 0,
-                           'avg_logicalConsistency': 0, 'avg_evidenceAndExamples': 0,
-                           'avg_clarityAndConcision': 0, 'avg_rebuttalEffectiveness': 0,
-                           'avg_overallPersuasiveness': 0 }
+                           'avg_logical_consistency': 0, 'avg_evidence_and_examples': 0,
+                           'avg_clarity_and_concision': 0, 'avg_rebuttal_effectiveness': 0,
+                           'avg_overall_persuasiveness': 0 }
         else:
             user_stats = user_stats_row
     except Exception as e:
@@ -1188,11 +1196,11 @@ def render_practice_dashboard(pathname, session_data):
     layout = [
         html.H4(f"Your All-Time Performance ({username})"),
         html.Div([
-            daq.Gauge(label="Logical Consistency", value=user_stats['avg_logicalConsistency'], max=10, min=0, color=gauge_colors),
-            daq.Gauge(label="Evidence & Examples", value=user_stats['avg_evidenceAndExamples'], max=10, min=0, color=gauge_colors),
-            daq.Gauge(label="Clarity & Concision", value=user_stats['avg_clarityAndConcision'], max=10, min=0, color=gauge_colors),
-            daq.Gauge(label="Rebuttal Effectiveness", value=user_stats['avg_rebuttalEffectiveness'], max=10, min=0, color=gauge_colors),
-            daq.Gauge(label="Overall Persuasiveness", value=user_stats['avg_overallPersuasiveness'], max=10, min=0, color=gauge_colors),
+            daq.Gauge(label="Logical Consistency", value=user_stats['avg_logical_consistency'], max=10, min=0, color=gauge_colors),
+            daq.Gauge(label="Evidence & Examples", value=user_stats['avg_evidence_and_examples'], max=10, min=0, color=gauge_colors),
+            daq.Gauge(label="Clarity & Concision", value=user_stats['avg_clarity_and_concision'], max=10, min=0, color=gauge_colors),
+            daq.Gauge(label="Rebuttal Effectiveness", value=user_stats['avg_rebuttal_effectiveness'], max=10, min=0, color=gauge_colors),
+            daq.Gauge(label="Overall Persuasiveness", value=user_stats['avg_overall_persuasiveness'], max=10, min=0, color=gauge_colors),
         ], className='gauge-grid'),
         html.P(f"Record (W-L-D): {user_stats['debates_won']}-{user_stats['debates_lost']}-{user_stats['debates_drawn']}",
                style={'textAlign': 'center', 'fontWeight': 'bold', 'marginTop': '20px', 'fontSize': '1.2rem'}),
@@ -1216,7 +1224,7 @@ def render_practice_dashboard(pathname, session_data):
             user_stance = saved_state.get('user_stance', 'User')
             ai_stance = saved_state.get('opponent_stance', 'AI')
             
-            winner = reasoning.get('overallWinner', 'N/A')
+            winner = reasoning.get('overall_winner', 'N/A')
             winner_status = 'Won' if winner == 'User' else 'Lost' if winner == 'AI' else 'Drew' if winner == 'Draw' else 'N/A'
             outcome_title = f"Outcome: You {winner_status}"
             
@@ -1226,7 +1234,7 @@ def render_practice_dashboard(pathname, session_data):
             user_display = f"YOU ({user_stance})"
             ai_display = f"AI ({ai_stance})"
             
-            feedback_text = reasoning.get('constructiveFeedbackUser', 'N/A')
+            feedback_text = reasoning.get('constructive_feedback_user', 'N/A')
             feedback_title = "Feedback for You:"
             
             # --- START: CHAT TRANSCRIPT RENDERING LOGIC ---
@@ -1257,20 +1265,20 @@ def render_practice_dashboard(pathname, session_data):
                 
                 html.Table([
                     html.Tr([html.Th("Metric"), html.Th(user_header), html.Th(ai_header)]),
-                    html.Tr([html.Td("Logical Consistency"), html.Td(safe_get(scores, ['User', 'logicalConsistency'])), html.Td(safe_get(scores, ['AI', 'logicalConsistency']))]),
-                    html.Tr([html.Td("Evidence & Examples"), html.Td(safe_get(scores, ['User', 'evidenceAndExamples'])), html.Td(safe_get(scores, ['AI', 'evidenceAndExamples']))]),
-                    html.Tr([html.Td("Clarity & Concision"), html.Td(safe_get(scores, ['User', 'clarityAndConcision'])), html.Td(safe_get(scores, ['AI', 'clarityAndConcision']))]),
-                    html.Tr([html.Td("Rebuttal Effectiveness"), html.Td(safe_get(scores, ['User', 'rebuttalEffectiveness'])), html.Td(safe_get(scores, ['AI', 'rebuttalEffectiveness']))]),
-                    html.Tr([html.Td("Overall Persuasiveness"), html.Td(safe_get(scores, ['User', 'overallPersuasiveness'])), html.Td(safe_get(scores, ['AI', 'overallPersuasiveness']))]),
+                    html.Tr([html.Td("Logical Consistency"), html.Td(safe_get(scores, ['User', 'logical_consistency'])), html.Td(safe_get(scores, ['AI', 'logical_consistency']))]),
+                    html.Tr([html.Td("Evidence & Examples"), html.Td(safe_get(scores, ['User', 'evidence_and_examples'])), html.Td(safe_get(scores, ['AI', 'evidence_and_examples']))]),
+                    html.Tr([html.Td("Clarity & Concision"), html.Td(safe_get(scores, ['User', 'clarity_and_concision'])), html.Td(safe_get(scores, ['AI', 'clarity_and_concision']))]),
+                    html.Tr([html.Td("Rebuttal Effectiveness"), html.Td(safe_get(scores, ['User', 'rebuttal_effectiveness'])), html.Td(safe_get(scores, ['AI', 'rebuttal_effectiveness']))]),
+                    html.Tr([html.Td("Overall Persuasiveness"), html.Td(safe_get(scores, ['User', 'overall_persuasiveness'])), html.Td(safe_get(scores, ['AI', 'overall_persuasiveness']))]),
                 ], className='dashboard-table'),
 
                 html.Details([
                     html.Summary("Detailed Reasoning"),
-                    html.P(f"Strongest ({user_header.split(' ')[0]}): {reasoning.get('strongestArgumentUser', 'N/A')}"),
-                    html.P(f"Strongest ({ai_header.split(' ')[0]}): {reasoning.get('strongestArgumentAI', 'N/A')}"),
-                    html.P(f"Weakest ({user_header.split(' ')[0]}): {reasoning.get('weakestArgumentUser', 'N/A')}"),
-                    html.P(f"Weakest ({ai_header.split(' ')[0]}): {reasoning.get('weakestArgumentAI', 'N/A')}"),
-                    html.P(f"Rebuttal Analysis: {reasoning.get('rebuttalAnalysis', 'N/A')}"),
+                    html.P(f"Strongest ({user_header.split(' ')[0]}): {reasoning.get('strongest_argument_user', 'N/A')}"),
+                    html.P(f"Strongest ({ai_header.split(' ')[0]}): {reasoning.get('strongest_argument_ai', 'N/A')}"),
+                    html.P(f"Weakest ({user_header.split(' ')[0]}): {reasoning.get('weakest_argument_user', 'N/A')}"),
+                    html.P(f"Weakest ({ai_header.split(' ')[0]}): {reasoning.get('weakest_argument_ai', 'N/A')}"),
+                    html.P(f"Rebuttal Analysis: {reasoning.get('rebuttal_analysis', 'N/A')}"),
                     html.P(
                         f"{feedback_title} {feedback_text}", 
                         style={'fontWeight': 'bold', 'marginTop': '10px'}
@@ -1349,25 +1357,25 @@ def render_judge_dashboard(pathname, session_data):
             reasoning = safe_get(final_results, ['reasoning'], {})
 
             # --- Judge Mode Logic ---
-            player_A_name = saved_state.get('player_A_name', 'Player A')
-            player_B_name = saved_state.get('player_B_name', 'Player B')
+            player_a_name = saved_state.get('player_a_name', 'Player A')
+            player_b_name = saved_state.get('player_b_name', 'Player B')
             user_stance = saved_state.get('user_stance', 'For')
             ai_stance = saved_state.get('opponent_stance', 'Against')
             
-            winner = reasoning.get('overallWinner', 'Draw')
-            winner_name = player_A_name if winner == 'User' else player_B_name if winner == 'AI' else 'Draw'
+            winner = reasoning.get('overall_winner', 'Draw')
+            winner_name = player_a_name if winner == 'User' else player_b_name if winner == 'AI' else 'Draw'
             outcome_title = f"Outcome: {winner_name} Wins!" if winner != 'Draw' else "Outcome: Draw"
 
-            user_header = f"{player_A_name}'s Score"
-            ai_header = f"{player_B_name}'s Score"
+            user_header = f"{player_a_name}'s Score"
+            ai_header = f"{player_b_name}'s Score"
             
-            user_display = f"{player_A_name} ({user_stance})"
-            ai_display = f"{player_B_name} ({ai_stance})"
+            user_display = f"{player_a_name} ({user_stance})"
+            ai_display = f"{player_b_name} ({ai_stance})"
             
-            feedback_A_text = reasoning.get('constructiveFeedbackUser', 'N/A')
-            feedback_A_title = f"Feedback for {player_A_name}:"
-            feedback_B_text = reasoning.get('constructiveFeedbackAI', 'N/A')
-            feedback_B_title = f"Feedback for {player_B_name}:"
+            feedback_a_text = reasoning.get('constructive_feedback_user', 'N/A')
+            feedback_a_title = f"Feedback for {player_a_name}:"
+            feedback_b_text = reasoning.get('constructive_feedback_ai', 'N/A')
+            feedback_b_title = f"Feedback for {player_b_name}:"
             
             # --- START: CHAT TRANSCRIPT RENDERING LOGIC ---
             chat_divs = []
@@ -1397,27 +1405,27 @@ def render_judge_dashboard(pathname, session_data):
                 
                 html.Table([
                     html.Tr([html.Th("Metric"), html.Th(user_header), html.Th(ai_header)]),
-                    html.Tr([html.Td("Logical Consistency"), html.Td(safe_get(scores, ['User', 'logicalConsistency'])), html.Td(safe_get(scores, ['AI', 'logicalConsistency']))]),
-                    html.Tr([html.Td("Evidence & Examples"), html.Td(safe_get(scores, ['User', 'evidenceAndExamples'])), html.Td(safe_get(scores, ['AI', 'evidenceAndExamples']))]),
-                    html.Tr([html.Td("Clarity & Concision"), html.Td(safe_get(scores, ['User', 'clarityAndConcision'])), html.Td(safe_get(scores, ['AI', 'clarityAndConcision']))]),
-                    html.Tr([html.Td("Rebuttal Effectiveness"), html.Td(safe_get(scores, ['User', 'rebuttalEffectiveness'])), html.Td(safe_get(scores, ['AI', 'rebuttalEffectiveness']))]),
-                    html.Tr([html.Td("Overall Persuasiveness"), html.Td(safe_get(scores, ['User', 'overallPersuasiveness'])), html.Td(safe_get(scores, ['AI', 'overallPersuasiveness']))]),
+                    html.Tr([html.Td("Logical Consistency"), html.Td(safe_get(scores, ['User', 'logical_consistency'])), html.Td(safe_get(scores, ['AI', 'logical_consistency']))]),
+                    html.Tr([html.Td("Evidence & Examples"), html.Td(safe_get(scores, ['User', 'evidence_and_examples'])), html.Td(safe_get(scores, ['AI', 'evidence_and_examples']))]),
+                    html.Tr([html.Td("Clarity & Concision"), html.Td(safe_get(scores, ['User', 'clarity_and_concision'])), html.Td(safe_get(scores, ['AI', 'clarity_and_concision']))]),
+                    html.Tr([html.Td("Rebuttal Effectiveness"), html.Td(safe_get(scores, ['User', 'rebuttal_effectiveness'])), html.Td(safe_get(scores, ['AI', 'rebuttal_effectiveness']))]),
+                    html.Tr([html.Td("Overall Persuasiveness"), html.Td(safe_get(scores, ['User', 'overall_persuasiveness'])), html.Td(safe_get(scores, ['AI', 'overall_persuasiveness']))]),
                 ], className='dashboard-table'),
 
                 html.Details([
                     html.Summary("Detailed Reasoning"),
-                    html.P(f"Strongest ({player_A_name}): {reasoning.get('strongestArgumentUser', 'N/A')}"),
-                    html.P(f"Strongest ({player_B_name}): {reasoning.get('strongestArgumentAI', 'N/A')}"),
-                    html.P(f"Weakest ({player_A_name}): {reasoning.get('weakestArgumentUser', 'N/A')}"),
-                    html.P(f"Weakest ({player_B_name}): {reasoning.get('weakestArgumentAI', 'N/A')}"),
-                    html.P(f"Rebuttal Analysis: {reasoning.get('rebuttalAnalysis', 'N/A')}"),
+                    html.P(f"Strongest ({player_a_name}): {reasoning.get('strongest_argument_user', 'N/A')}"),
+                    html.P(f"Strongest ({player_b_name}): {reasoning.get('strongest_argument_ai', 'N/A')}"),
+                    html.P(f"Weakest ({player_a_name}): {reasoning.get('weakest_argument_user', 'N/A')}"),
+                    html.P(f"Weakest ({player_b_name}): {reasoning.get('weakest_argument_ai', 'N/A')}"),
+                    html.P(f"Rebuttal Analysis: {reasoning.get('rebuttal_analysis', 'N/A')}"),
                     
                     html.P(
-                        f"{feedback_A_title} {feedback_A_text}", 
+                        f"{feedback_a_title} {feedback_a_text}", 
                         style={'fontWeight': 'bold', 'marginTop': '10px'}
                     ),
                     html.P(
-                        f"{feedback_B_title} {feedback_B_text}", 
+                        f"{feedback_b_title} {feedback_b_text}", 
                         style={'fontWeight': 'bold', 'marginTop': '10px'}
                     )
                 ]),
