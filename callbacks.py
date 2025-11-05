@@ -8,6 +8,7 @@ import re # For parsing JSON
 import psycopg2 # <-- ADDED for Render PostgreSQL
 from psycopg2.extras import DictCursor # <-- ADDED for Render PostgreSQL
 from datetime import datetime
+import pytz # <-- IMPORT FOR TIMEZONE FIX
 
 # --- NEW IMPORTS FOR AZURE STT ---
 import base64
@@ -19,7 +20,6 @@ import threading # <-- ADDED for continuous recognition
 
 from dash import html, dcc, Input, Output, State, callback_context, no_update
 import dash_daq as daq
-import pytz
 
 # Import the main 'app' variable from app.py
 from app import app # This line is essential
@@ -93,6 +93,16 @@ Evaluate both the 'User' and the 'AI' on the following five criteria.
 You MUST be strict and fair. Scores range from 0 (non-existent) to 10 (excellent).
 **If an argument is non-existent, irrelevant (e.g., just says "hi"), or makes no attempt, you MUST give it a score of 0.**
 
+**!! JUDICIAL GUARDRAILS (CRITICAL) !!**
+- **BE IMPARTIAL:** Your evaluation must be based *only* on the arguments presented in the transcript. Do not introduce any external knowledge or personal opinions on the topic.
+- **BE A JUDGE, NOT A COACH:** Do not provide motivational feedback or overly conversational praise. Your "constructiveFeedback" must be clinical, direct, and actionable.
+- **DO NOT HALLUCINATE:** If a debater fails to provide evidence, their score for "evidenceAndExamples" MUST be low or 0. Do not invent arguments they *could* have made. Judge *only* what is in the transcript.
+- **ADHERE TO THE FORMAT:** Your *only* output must be the JSON object. Do not add any text before or after it, such as "Here is the JSON:" or "```json".
+- **USE THE FULL SCORING RANGE:** Do not hesitate to give a 10 for a perfect execution of a skill or a 0-2 for a very poor one. Avoid clustering all scores in the middle (4-7).
+- **LINK FEEDBACK TO METRICS:** Your `constructiveFeedback` must be specific. For example, instead of "Be more persuasive," say "To improve your *evidenceAndExamples* score, cite a specific statistic."
+- **PROVIDE JUSTIFICATION, NOT SUMMARY:** Your `reasoning` fields must *justify* the score, not just repeat what the debater said. Explain *why* an argument was weak or strong.
+- **MAINTAIN A CONSISTENT STANDARD:** Apply the scoring metrics with the same level of scrutiny to both the 'User' and the 'AI'.
+
 1.  **logicalConsistency (Score 0-10):**
     * **Focus:** The integrity of the argument's structure and its internal coherence.
     * **Judicial Insight (Referencing Fallacies):** Score based on how well the debater maintained a consistent thesis without introducing **internal contradictions** or relying on obvious logical **fallacies** (e.g., *slippery slope, circular reasoning, false dichotomy, hasty generalization*). A high score reflects arguments where the premises directly and unequivocally support the conclusion throughout the debate. Low scores indicate a fundamental breakdown in the logical chain, a significant shift in the central claim's definition, or the use of **non-sequiturs** (where the conclusion does not follow from the premise). **A score of 0 MUST be given for non-existent arguments.**
@@ -103,7 +113,7 @@ You MUST be strict and fair. Scores range from 0 (non-existent) to 10 (excellent
 
 3.  **clarityAndConcision (Score 0-10):**
     * **Focus:** The structural effectiveness and communicative efficiency of the argument.
-    * **Judicial Insight (Referencing Rhetoric/Flowing):** Score based on the debater's use of **signposting** (e.g., "My first point is...", "Moving to my opponent's claim about X..."), clear topic sentences, and avoiding verbose or tangential explanations. A perfect score means the argument was immediately understandable, powerful, and free of filler, allowing the opponent and judge to easily **"flow"** (take notes on) the key claims. Low scores are given for rambling, confusing complexity, excessive jargon, or a lack of clear separation between arguments. **A score of 0 MUST be given for irrelevant or non-existent arguments.**
+    * **Judicial Insight (Referencing Rhetoric/Flowing):** Score based on the debater's use of **signposting** (e.g., "My first point is...", "Moving to my opponent's claim about X..."), clear topic sentences, and avoiding verbose or tangential explanations. A perfect score means the argument was immediately understandable, powerful, and free of filler, allowing the opponent and judge to Ee *flow"** (take notes on) the key claims. Low scores are given for rambling, confusing complexity, excessive jargon, or a lack of clear separation between arguments. **A score of 0 MUST be given for irrelevant or non-existent arguments.**
 
 4.  **rebuttalEffectiveness (Score 0-10):**
     * **Focus:** The ability to directly engage with and dismantle the opponent's specific arguments.
@@ -548,11 +558,15 @@ def transcribe_audio_from_base64(base64_audio_data, azure_key, azure_region):
         return None
 
 # --- *** MODIFIED: STT Callback now gets keys from session *** ---
+# --- *** START OF FIX *** ---
+# This callback now outputs to the new 'stt-loading-output' div
+# This triggers the 'loading-stt' spinner ONLY during transcription.
 @app.callback(
-    Output('user-input-textarea', 'value', allow_duplicate=True), 
+    [Output('user-input-textarea', 'value', allow_duplicate=True),
+     Output('stt-loading-output', 'children')], # <-- ADDED THIS OUTPUT
     Input('stt-output-store', 'data'), 
     [State('user-input-textarea', 'value'),
-     State('session-storage', 'data')], # <-- NEW STATE
+     State('session-storage', 'data')],
     prevent_initial_call=True
 )
 def handle_audio_transcript(base64_audio_data, current_text, session_data):
@@ -563,20 +577,56 @@ def handle_audio_transcript(base64_audio_data, current_text, session_data):
 
     if not azure_key or not azure_region:
         print("STT Error: No Azure keys found in session. Go to Settings.")
-        return no_update # Don't change the text
-        
+        return no_update, None # <-- RETURN 2 VALUES
+
     transcript = transcribe_audio_from_base64(base64_audio_data, azure_key, azure_region)
     
     print(f"--- PYTHON CALLBACK RECEIVED: {transcript} ---")
     
     if transcript:
         if current_text:
-            return f"{current_text} {transcript}"
-        return transcript
+            return f"{current_text} {transcript}", None # <-- RETURN 2 VALUES
+        return transcript, None # <-- RETURN 2 VALUES
     
-    return no_update
+    return no_update, None # <-- RETURN 2 VALUES
+# --- *** END OF FIX *** ---
 
 # --- END OF STT CALLBACK ---
+
+
+# --- *** START OF FIX *** ---
+# --- NEW CLIENT-SIDE CALLBACKS TO CLEAR TEXT AREA ---
+# This instantly clears the text after sending,
+# preventing the "send" button from triggering the STT loading spinner.
+
+# Callback 1: For Practice Room
+app.clientside_callback(
+    """
+    function(n_clicks) {
+        // This function is triggered by the practice send button.
+        // It simply returns an empty string to clear the textarea.
+        return "";
+    }
+    """,
+    Output('user-input-textarea', 'value', allow_duplicate=True),
+    [Input('send-argument-button', 'n_clicks')],
+    prevent_initial_call=True
+)
+
+# Callback 2: For Judge Mode
+app.clientside_callback(
+    """
+    function(n_clicks) {
+        // This function is triggered by the judge send button.
+        // It simply returns an empty string to clear the textarea.
+        return "";
+    }
+    """,
+    Output('user-input-textarea', 'value', allow_duplicate=True),
+    [Input('judge-send-argument-btn', 'n_clicks')],
+    prevent_initial_call=True
+)
+# --- *** END OF FIX *** ---
 
 
 # --- PRACTICE MODE CALLBACKS (AI vs Human) ---
@@ -630,7 +680,9 @@ def start_practice_debate(n_clicks, topic, stance, turns, session_data):
 # --- *** MODIFIED: Practice turn now uses session key *** ---
 @app.callback(
     [Output('chat-window', 'children', allow_duplicate=True),
-     Output('user-input-textarea', 'value', allow_duplicate=True),
+     # --- *** START OF FIX: REMOVED TEXTAREA OUTPUT *** ---
+     # Output('user-input-textarea', 'value', allow_duplicate=True), 
+     # --- *** END OF FIX *** ---
      Output('session-storage', 'data', allow_duplicate=True),
      Output('loading-output', 'children'),
      Output('url', 'pathname', allow_duplicate=True),
@@ -662,18 +714,25 @@ def handle_practice_turn(n_clicks, user_input, session_data, current_chat, timer
     if not google_key:
         error_msg = "ERROR: Google API Key not set. Please go to the Settings page."
         current_chat.append(html.P(error_msg, style={'color': 'red', 'textAlign': 'center'}))
-        return current_chat, "", no_update, None, no_update, no_update, no_update, no_update, None
+        # --- *** START OF FIX *** ---
+        # Return 8 values, not 9
+        return current_chat, no_update, None, no_update, no_update, no_update, no_update, None
+        # --- *** END OF FIX *** ---
     
     try:
         genai.configure(api_key=google_key)
     except Exception as e:
         error_msg = f"ERROR: Invalid Google API Key: {e}"
         current_chat.append(html.P(error_msg, style={'color': 'red', 'textAlign': 'center'}))
-        return current_chat, "", no_update, None, no_update, no_update, no_update, no_update, None
-    # --- *** END MODIFICATION *** ---
+        # --- *** START OF FIX *** ---
+        return current_chat, no_update, None, no_update, no_update, no_update, no_update, None
+        # --- *** END OF FIX *** ---
+    # --- *** END MODIFICATION ---
     
     if not user_input or 'debate_state' not in session_data:
-        return no_update, "", no_update, None, no_update, no_update, no_update, no_update, None
+        # --- *** START OF FIX *** ---
+        return no_update, no_update, None, no_update, no_update, no_update, no_update, None
+        # --- *** END OF FIX *** ---
 
     debate_state = session_data['debate_state']
     chat_history = session_data.get('chat_history', []) 
@@ -753,7 +812,9 @@ def handle_practice_turn(n_clicks, user_input, session_data, current_chat, timer
         send_button_disabled = True
         textarea_disabled = True
         
-        return current_chat, "", session_data, None, no_update, results_button_style, send_button_disabled, textarea_disabled, None
+        # --- *** START OF FIX *** ---
+        return current_chat, session_data, None, no_update, results_button_style, send_button_disabled, textarea_disabled, None
+        # --- *** END OF FIX *** ---
 
     # --- NORMAL TURN LOGIC (AI Responds) ---
     
@@ -782,7 +843,9 @@ def handle_practice_turn(n_clicks, user_input, session_data, current_chat, timer
     chat_history.append({'role': 'model', 'parts': [ai_response_text]})
     session_data['chat_history'] = chat_history 
     
-    return current_chat, "", session_data, None, no_update, results_button_style, send_button_disabled, textarea_disabled, None
+    # --- *** START OF FIX *** ---
+    return current_chat, session_data, None, no_update, results_button_style, send_button_disabled, textarea_disabled, None
+    # --- *** END OF FIX *** ---
 
 
 # --- *** NEW: JUDGE MODE ("Hot-Seat") CALLBACKS *** ---
@@ -853,7 +916,9 @@ def start_judged_debate(n_clicks, topic, turns, p_a_name, p_a_stance, p_b_name, 
 # Callback 3: Handle a Judged Turn (Human vs Human)
 @app.callback(
     [Output('judge-chat-window', 'children', allow_duplicate=True),
-     Output('user-input-textarea', 'value', allow_duplicate=True),
+     # --- *** START OF FIX: REMOVED TEXTAREA OUTPUT *** ---
+     # Output('user-input-textarea', 'value', allow_duplicate=True),
+     # --- *** END OF FIX *** ---
      Output('session-storage', 'data', allow_duplicate=True),
      Output('judge-turn-display', 'children', allow_duplicate=True),
      Output('judge-loading-output', 'children'),
@@ -876,7 +941,10 @@ def handle_judged_turn(n_clicks, user_input, session_data, current_chat, timer_d
     end_button_style = {'display': 'none', 'marginTop': '10px'}
 
     if not user_input or not session_data or 'debate_state' not in session_data:
-        return no_update, "", no_update, no_update, None, None, no_update, no_update, no_update
+        # --- *** START OF FIX *** ---
+        # Return 8 values, not 9
+        return no_update, no_update, no_update, None, None, no_update, no_update, no_update
+        # --- *** END OF FIX *** ---
 
     debate_state = session_data['debate_state']
     chat_history = session_data.get('chat_history', []) 
@@ -916,9 +984,11 @@ def handle_judged_turn(n_clicks, user_input, session_data, current_chat, timer_d
         google_key = session_data.get('google_key')
         if not google_key:
             turn_display = "ERROR: Google Key not set. Cannot get judgment."
-            # Return 9 values
-            return (current_chat, "", session_data, turn_display, None, None, 
+            # Return 8 values
+            # --- *** START OF FIX *** ---
+            return (current_chat, session_data, turn_display, None, None, 
                     True, True, end_button_style)
+            # --- *** END OF FIX *** ---
         # --- *** END MODIFICATION ---
 
         try:
@@ -963,8 +1033,11 @@ def handle_judged_turn(n_clicks, user_input, session_data, current_chat, timer_d
     session_data['debate_state'] = debate_state
     session_data['chat_history'] = chat_history 
 
-    return (current_chat, "", session_data, turn_display, None, None, 
+    # --- *** START OF FIX *** ---
+    # Return 8 values
+    return (current_chat, session_data, turn_display, None, None, 
             send_button_disabled, textarea_disabled, end_button_style)
+    # --- *** END OF FIX *** ---
 
 
 # --- *** END OF JUDGE MODE CALLBACKS *** ---
@@ -1474,8 +1547,6 @@ def render_judge_dashboard(pathname, session_data):
 
 # --- *** NEW: HISTORY PAGE CALLBACKS *** ---
 
-# --- *** NEW: HISTORY PAGE CALLBACKS *** ---
-
 # Callback 1: Load the list of past debates into the dropdown
 @app.callback(
     Output('history-dropdown', 'options'),
@@ -1529,6 +1600,7 @@ def load_history_dropdown(pathname, session_data):
         return [{'label': 'No debates found in your history.', 'value': '', 'disabled': True}]
         
     return options
+
 # Callback 2: Load a selected debate from history into session and redirect
 @app.callback(
     [Output('session-storage', 'data', allow_duplicate=True),

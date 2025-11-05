@@ -8,7 +8,7 @@ practice_layout = html.Div(className='layout-wrapper', children=[
         
         # This dcc.Store must be outside the hidden div so it always loads
         dcc.Store(id='stt-output-store'),
-        dcc.Store(id='timer-store'), # <-- ADDED THIS LINE
+        dcc.Store(id='timer-store'),
         
         html.Div(className='card practice-card', children=[
             # This outer div contains both the setup and the chat interface
@@ -43,11 +43,22 @@ practice_layout = html.Div(className='layout-wrapper', children=[
                 html.Div(id='debate-interface-div', style={'display': 'none'}, children=[
                     html.H3(id='debate-topic-display'),
                     html.Div(id='chat-window', className='chat-window'),
+                    
+                    # --- *** START OF FIX *** ---
+                    # The Textarea is NO LONGER wrapped
                     dcc.Textarea(
                         id='user-input-textarea',
                         placeholder='Type your argument...',
                         className='textarea-field'
                     ),
+                    
+                    # This new Loading component will ONLY trigger during transcription
+                    dcc.Loading(
+                        id="loading-stt",
+                        type="default",
+                        children=html.Div(id="stt-loading-output") # Watches this new div
+                    ),
+                    # --- *** END OF FIX *** ---
                     
                     # --- Wrapper for Record Button and Timer ---
                     html.Div([

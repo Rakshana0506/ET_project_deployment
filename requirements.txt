@@ -17,6 +17,7 @@ MarkupSafe==3.0.3
 Werkzeug
 Jinja2
 itsdangerous
+pytz
 
 # --- OTHER CORE DEPENDENCIES (Cleaned Versions) ---
 aiohttp
