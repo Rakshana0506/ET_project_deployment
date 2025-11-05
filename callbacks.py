@@ -19,6 +19,7 @@ import threading # <-- ADDED for continuous recognition
 
 from dash import html, dcc, Input, Output, State, callback_context, no_update
 import dash_daq as daq
+import pytz
 
 # Import the main 'app' variable from app.py
 from app import app # This line is essential
@@ -1473,6 +1474,8 @@ def render_judge_dashboard(pathname, session_data):
 
 # --- *** NEW: HISTORY PAGE CALLBACKS *** ---
 
+# --- *** NEW: HISTORY PAGE CALLBACKS *** ---
+
 # Callback 1: Load the list of past debates into the dropdown
 @app.callback(
     Output('history-dropdown', 'options'),
@@ -1498,8 +1501,18 @@ def load_history_dropdown(pathname, session_data):
         history = cur.fetchall()
         
         for item in history:
-            # Format the timestamp
-            ts = pd.to_datetime(item['timestamp']).strftime('%Y-%m-%d %I:%M %p')
+            
+            # --- START OF TIMEZONE FIX ---
+            ts_obj = pd.to_datetime(item['timestamp'])
+            
+            if ts_obj.tzinfo is None:
+                # It's a naive timestamp (from SQLite), localize it to UTC
+                ts_obj = ts_obj.tz_localize('UTC')
+            
+            # Now it's timezone-aware, so convert to IST
+            ts = ts_obj.tz_convert('Asia/Kolkata').strftime('%Y-%m-%d %I:%M %p')
+            # --- END OF TIMEZONE FIX ---
+            
             mode = "Practice Mode" if item['debate_mode'] == 'practice' else "Judge Mode"
             topic = item['debate_topic']
             
@@ -1516,7 +1529,6 @@ def load_history_dropdown(pathname, session_data):
         return [{'label': 'No debates found in your history.', 'value': '', 'disabled': True}]
         
     return options
-
 # Callback 2: Load a selected debate from history into session and redirect
 @app.callback(
     [Output('session-storage', 'data', allow_duplicate=True),
