@@ -82,11 +82,21 @@ judge_mode_layout = html.Div(className='layout-wrapper', children=[
 
                     html.Div(id='judge-chat-window', className='chat-window'), # Unique ID
                     
+                    # --- *** START OF FIX *** ---
+                    # The Textarea is NO LONGER wrapped
                     dcc.Textarea(
                         id='user-input-textarea', # REUSED ID
                         placeholder='Type argument here...',
                         className='textarea-field'
                     ),
+                    
+                    # This new Loading component will ONLY trigger during transcription
+                    dcc.Loading(
+                        id="loading-stt", # This ID is fine to reuse
+                        type="default",
+                        children=html.Div(id="stt-loading-output") # Watches this new div
+                    ),
+                    # --- *** END OF FIX *** ---
                     
                     # Wrapper for Record Button and Timer
                     html.Div([
