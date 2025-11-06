@@ -761,6 +761,18 @@ app.clientside_callback(
 )
 def start_practice_debate(n_clicks, topic, stance, turns, session_data):
     session_data = session_data or {}
+    # --- NEW: Get key from session ---
+    google_key = session_data.get('google_key')
+    
+    # --- NEW: API Key Check ---
+    if not google_key:
+        error_msg = "ERROR: API Keys not set. Please go to the Settings page."
+        # Return 10 values: 
+        # - no_update for the first 8
+        # - True, error_msg for the popup
+        return (no_update, no_update, no_update, no_update, no_update, 
+                no_update, no_update, no_update, 
+                True, error_msg)
     
     # --- Original logic continues below ---
     results_button_style = {'display': 'none', 'marginTop': '10px'}
