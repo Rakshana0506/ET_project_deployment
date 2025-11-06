@@ -71,7 +71,6 @@ def initialize_database():
     CREATE TABLE IF NOT EXISTS users (
         {users_pk},
         name TEXT NOT NULL,
-        email TEXT UNIQUE NOT NULL,
         username TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL
     );

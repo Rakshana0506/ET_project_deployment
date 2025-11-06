@@ -8,6 +8,7 @@ import re # For parsing JSON
 import psycopg2 # <-- ADDED for Render PostgreSQL
 from psycopg2.extras import DictCursor # <-- ADDED for Render PostgreSQL
 from datetime import datetime
+import re
 import pytz # <-- IMPORT FOR TIMEZONE FIX
 
 # --- NEW IMPORTS FOR AZURE STT ---
@@ -206,29 +207,69 @@ def save_debate_to_db(username, debate_state, chat_history, final_results):
         con.close()
 
 # --- USER AUTHENTICATION & MANAGEMENT ---
+def is_password_strong(password):
+    """
+    Checks if password is at least 8 chars, has upper, lower, and number.
+    And contains ONLY alphanumeric characters (no symbols).
+    """
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters long."
+    if not re.search(r"[a-z]", password):
+        return False, "Password must contain at least one lowercase letter."
+    if not re.search(r"[A-Z]", password):
+        return False, "Password must contain at least one uppercase letter."
+    if not re.search(r"\d", password):
+        return False, "Password must contain at least one number."
+    if not re.fullmatch(r"^[a-zA-Z0-9]+$", password):
+        # This ensures no symbols, only letters and numbers
+        return False, "Password must only contain letters and numbers (no symbols)."
+    return True, ""
 
+
+##
+## UPDATED REGISTRATION CALLBACK
+##
 @app.callback(
-    Output('register-message', 'children'),
+    [Output('register-message', 'children'),
+     Output('register-message', 'className')],
     Input('register-button', 'n_clicks'),
     [State('reg-name', 'value'),
-     State('reg-email', 'value'),
+     # --- 'reg-email' STATE REMOVED ---
      State('reg-username', 'value'),
-     State('reg-password', 'value')],
+     State('reg-password', 'value'),
+     State('reg-password-confirm', 'value')],
     prevent_initial_call=True
 )
-def register_user(n_clicks, name, email, username, password):
-    if not all([name, email, username, password]):
-        return "Please fill in all fields."
+def register_user(n_clicks, name, username, password, password_confirm): # <-- 'email' removed from parameters
+    
+    # 1. Check if all fields are filled
+    if not all([name, username, password, password_confirm]): # <-- 'email' removed from check
+        return "Please fill in all mandatory fields.", "message message-error"
         
+    # 2. Check if passwords match
+    if password != password_confirm:
+        return "Passwords do not match.", "message message-error"
+        
+    # 3. Check password strength
+    strong, message = is_password_strong(password)
+    if not strong:
+        return message, "message message-error"
+
+    # --- Database logic ---
     con = get_db_connection()
     ph = '?' if isinstance(con, sqlite3.Connection) else '%s'
     
     try:
         cur = con.cursor() 
         
-        sql_insert_user = f"INSERT INTO users (name, email, username, password) VALUES ({ph}, {ph}, {ph}, {ph})"
-        cur.execute(sql_insert_user, (name, email, username, password))
+        # !! SECURITY WARNING !!
+        # You should HASH your password before storing it.
         
+        # --- SQL query updated to remove 'email' ---
+        sql_insert_user = f"INSERT INTO users (name, username, password) VALUES ({ph}, {ph}, {ph})"
+        cur.execute(sql_insert_user, (name, username, password)) # <-- 'email' removed from tuple
+        
+        # --- This user_stats query is fine as it only uses username ---
         sql_insert_stats = f"""
             INSERT INTO user_stats (
                 username, debates_won, debates_lost, debates_drawn,
@@ -241,22 +282,31 @@ def register_user(n_clicks, name, email, username, password):
         
         con.commit() 
         message = f"Registration successful for {username}! You can now log in."
+        classname = "message message-success"
+        
     except (sqlite3.IntegrityError, psycopg2.IntegrityError) as e:
         con.rollback() 
-        message = "Username or email already exists."
+        # --- Updated error message ---
+        message = "Username already exists."
+        classname = "message message-error"
     except Exception as e:
         con.rollback()
         print(f"Registration error: {e}")
         message = "An error occurred during registration. Please try again."
+        classname = "message message-error"
     finally:
         con.close()
-    return message
+        
+    return message, classname
 
-
+##
+## UPDATED LOGIN CALLBACK (to add error styling)
+##
 @app.callback(
     [Output('session-storage', 'data', allow_duplicate=True),
      Output('url', 'pathname', allow_duplicate=True),
-     Output('login-message', 'children')],
+     Output('login-message', 'children'),
+     Output('login-message', 'className')], # <-- Added className output
     Input('login-button', 'n_clicks'),
     [State('login-username', 'value'),
      State('login-password', 'value'),
@@ -265,7 +315,7 @@ def register_user(n_clicks, name, email, username, password):
 )
 def login_user(n_clicks, username, password, session_data):
     if not username or not password:
-        return no_update, no_update, "Please enter username and password."
+        return no_update, no_update, "Please enter username and password.", "message message-error"
         
     con = get_db_connection()
     ph = '?' if isinstance(con, sqlite3.Connection) else '%s'
@@ -278,17 +328,24 @@ def login_user(n_clicks, username, password, session_data):
         
         user_record = cur.fetchone()
         
+        # !! SECURITY WARNING !!
+        # You should be checking a HASHED password here, not plain text.
+        # e.g., if user_record and check_password_hash(user_record['password'], password):
+        
         if user_record and user_record['password'] == str(password):
             session_data = session_data or {}
             session_data['active_user'] = username
-            return session_data, '/home', ""
+            # Go to home, no message, and default message class
+            return session_data, '/home', "", "message" 
         else:
-            return no_update, no_update, "Invalid username or password."
+            return no_update, no_update, "Invalid username or password.", "message message-error"
+            
     except Exception as e:
         print(f"Login error: {e}")
-        return no_update, no_update, "An error occurred during login."
+        return no_update, no_update, "An error occurred during login.", "message message-error"
     finally:
         con.close()
+
 
 @app.callback(
     Output('home-welcome-message', 'children'),
@@ -679,7 +736,7 @@ app.clientside_callback(
 
 
 # --- PRACTICE MODE CALLBACKS (AI vs Human) ---
-
+# --- *** MODIFIED: Now checks for API key BEFORE starting debate *** ---
 @app.callback(
     [Output('debate-setup-div', 'style'),
      Output('debate-interface-div', 'style'),
@@ -689,7 +746,11 @@ app.clientside_callback(
      
      Output('view-results-button', 'style', allow_duplicate=True),
      Output('send-argument-button', 'disabled', allow_duplicate=True),
-     Output('user-input-textarea', 'disabled', allow_duplicate=True)
+     Output('user-input-textarea', 'disabled', allow_duplicate=True),
+     
+     # --- NEW POPUP OUTPUTS (add these) ---
+     Output('api-key-error-popup', 'displayed', allow_duplicate=True),
+     Output('api-key-error-popup', 'message', allow_duplicate=True)
     ],
     Input('start-debate-button', 'n_clicks'),
     [State('debate-topic-input', 'value'),
@@ -699,14 +760,19 @@ app.clientside_callback(
     prevent_initial_call=True
 )
 def start_practice_debate(n_clicks, topic, stance, turns, session_data):
+    session_data = session_data or {}
+    
+    # --- Original logic continues below ---
     results_button_style = {'display': 'none', 'marginTop': '10px'}
     send_button_disabled = False
     textarea_disabled = False
 
     if not all([topic, stance, turns]):
-        return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+        # Return 10 values: 8 no_updates, 2 popup no_updates
+        return (no_update, no_update, no_update, no_update, no_update, 
+                no_update, no_update, no_update,
+                no_update, no_update) # <-- hide popup
 
-    session_data = session_data or {}
     debate_state = {
         'mode': 'practice', 
         'topic': topic,
@@ -721,10 +787,13 @@ def start_practice_debate(n_clicks, topic, stance, turns, session_data):
     initial_message = html.Div(f"Debate started on: '{topic}'. You are arguing '{stance}'. Waiting for your first argument.",
                                style={'fontStyle': 'italic', 'color': 'grey', 'textAlign': 'center'})
     
+    # Return 10 values:
+    # - 8 original success values
+    # - 2 "no_update" for the popup (to hide it if it was open)
     return ({'display': 'none'}, {'display': 'block'},
             f"Topic: {topic}", [initial_message], session_data,
-            results_button_style, send_button_disabled, textarea_disabled)
-
+            results_button_style, send_button_disabled, textarea_disabled,
+            no_update, no_update) # <-- Hide popup on success
 
 # --- *** MODIFIED: Practice turn now triggers popup on error *** ---
 @app.callback(
@@ -941,13 +1010,19 @@ def judge_auto_set_stance(player_a_stance):
     return no_update
 
 # Callback 2: Start the Judged Debate
+# --- *** MODIFIED: Now checks for API key BEFORE starting debate *** ---
 @app.callback(
     [Output('judge-setup-div', 'style'),
      Output('judge-interface-div', 'style'),
      Output('judge-topic-display', 'children'),
      Output('judge-chat-window', 'children'),
      Output('judge-turn-display', 'children'),
-     Output('session-storage', 'data', allow_duplicate=True)],
+     Output('session-storage', 'data', allow_duplicate=True),
+     
+     # --- NEW POPUP OUTPUTS (add these) ---
+     Output('api-key-error-popup', 'displayed', allow_duplicate=True),
+     Output('api-key-error-popup', 'message', allow_duplicate=True)
+    ],
     Input('start-judge-debate-btn', 'n_clicks'),
     [State('judge-topic-input', 'value'),
      State('judge-turns-input', 'value'),
@@ -960,11 +1035,27 @@ def judge_auto_set_stance(player_a_stance):
 )
 def start_judged_debate(n_clicks, topic, turns, p_a_name, p_a_stance, p_b_name, p_b_stance, session_data):
     
-    if not all([topic, turns, p_a_name, p_a_stance, p_b_name, p_b_stance]):
-        return no_update, no_update, no_update, no_update, no_update, no_update
-
     session_data = session_data or {}
     
+    # --- NEW: Get key from session ---
+    google_key = session_data.get('google_key')
+    
+    # --- NEW: API Key Check ---
+    if not google_key:
+        error_msg = "ERROR: API Keys not set. Please go to the Settings page."
+        # Return 8 values: 
+        # - no_update for the first 6
+        # - True, error_msg for the popup
+        return (no_update, no_update, no_update, no_update, no_update, no_update, 
+                True, error_msg)
+
+    # --- Original logic continues below ---
+    
+    if not all([topic, turns, p_a_name, p_a_stance, p_b_name, p_b_stance]):
+        # Return 8 values: 6 no_updates, 2 popup no_updates
+        return (no_update, no_update, no_update, no_update, no_update, no_update,
+                no_update, no_update) # <-- hide popup
+
     debate_state = {
         'mode': 'judge', 
         'topic': topic,
@@ -974,7 +1065,7 @@ def start_judged_debate(n_clicks, topic, turns, p_a_name, p_a_stance, p_b_name, 
         'player_B_name': p_b_name,
         'total_turns': int(turns) * 2,   # Total turns for *both* players
         'current_turn_count': 0,
-        'current_player_role': 'user'     # 'user' = Player A, 'model' = Player B
+        'current_player_role': 'user'    # 'user' = Player A, 'model' = Player B
     }
     
     session_data['debate_state'] = debate_state
@@ -986,10 +1077,13 @@ def start_judged_debate(n_clicks, topic, turns, p_a_name, p_a_stance, p_b_name, 
     
     turn_display = f"It is {p_a_name}'s turn ({p_a_stance})"
     
+    # Return 8 values:
+    # - 6 original success values
+    # - 2 "no_update" for the popup (to hide it if it was open)
     return ({'display': 'none'}, {'display': 'block'},
             f"Topic: {topic}", [initial_message],
-            turn_display, session_data)
-
+            turn_display, session_data,
+            no_update, no_update) # <-- Hide popup on success
 
 # --- *** MODIFIED: Judged turn now triggers popup on error *** ---
 @app.callback(
