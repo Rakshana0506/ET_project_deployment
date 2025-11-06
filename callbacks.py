@@ -841,13 +841,6 @@ def handle_practice_turn(n_clicks, user_input, session_data, current_chat, timer
     session_data = session_data or {}
     google_key = session_data.get('google_key')
     
-    # --- MODIFIED ERROR HANDLING ---
-    if not google_key:
-        error_msg = "ERROR: Google API Key not set. Please go to the Settings page."
-        # Return 10 values
-        return (no_update, no_update, None, no_update, 
-                no_update, no_update, no_update, None, 
-                True, error_msg)
     
     try:
         genai.configure(api_key=google_key)
