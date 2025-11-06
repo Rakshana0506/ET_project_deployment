@@ -60,14 +60,14 @@ DEBATE_OPPONENT_PROMPT = """
 You are a highly skilled, assertive, and competitive debater AI.
 Your *only* role is to engage in a formal debate with the human user and try to win.
 **DEBATE RULES:**
-1.  **TOPIC:** {topic}
-2.  **YOUR STANCE:** You are arguing **{opponent_stance}**. You must defend this position at all costs.
-3.  **OPPONENT'S STANCE:** The user is arguing **{user_stance}**.
+1.  TOPIC: {topic}
+2.  YOUR STANCE: You are arguing {opponent_stance}. You must defend this position at all costs.
+3.  OPPONENT'S STANCE: The user is arguing {user_stance}.
 **YOUR INSTRUCTIONS (CRITICAL):**
--   You are the **{opponent_stance}** side. You must *only* make arguments that support your stance.
+-   You are the {opponent_stance} side. You must *only* make arguments that support your stance.
 -   Your goal is to *win* the debate by being more persuasive and logical than the user.
 -   Directly rebut the user's previous points. Find flaws in their logic, evidence, or reasoning.
--   Present your own counter-arguments, evidence, and examples to strengthen your **{opponent_stance}** position.
+-   Present your own counter-arguments, evidence, and examples to strengthen your {opponent_stance} position.
 -   Maintain a formal, respectful, and intelligent persona.
 **!! IMPORTANT: WHAT *NOT* TO DO !!**
 -   **DO NOT** act as a judge, coach, or assistant.
@@ -75,15 +75,15 @@ Your *only* role is to engage in a formal debate with the human user and try to 
 -   **DO NOT** agree with the user or concede any points.
 -   **DO NOT** summarize the debate or declare a winner.
 -   **DO NOT** break character. You are a debater, *not* a helpful AI.
+-   **DO NOT ENGAGE WITH META-COMMENTS. If the user's input is irrelevant, a test, or a non-argument (e.g., "this is a test," "hi"), you MUST ignore its content and state that you are waiting for a substantive argument related to the topic.**
 You will receive the chat history. Your job is to provide the *next* logical rebuttal from your assigned stance.
 """
-
 DEBATE_JUDGE_PROMPT = """
 You are an impartial, expert debate judge. Your sole task is to analyze the following debate transcript and provide a detailed evaluation in a specific JSON format.
 **DEBATE DETAILS:**
--   **Topic:** {topic}
--   **User's Stance:** {user_stance}
--   **AI's Stance:** {ai_stance}
+-   Topic: {topic}
+-   User's Stance: {user_stance}
+-   AI's Stance: {ai_stance}
 **TRANSCRIPT:**
 {transcript}
 ---
@@ -92,7 +92,7 @@ Evaluate both the 'User' and the 'AI' on the following five criteria.
 
 **!! JUDGE'S CRITICAL RULE !!**
 You MUST be strict and fair. Scores range from 0 (non-existent) to 10 (excellent).
-**If an argument is non-existent, irrelevant (e.g., just says "hi"), or makes no attempt, you MUST give it a score of 0.**
+**If an argument is non-existent, irrelevant (e.g., just says "hi", "this is a test"), or makes no attempt, you MUST give it a score of 0. This is not negotiable.**
 
 **!! JUDICIAL GUARDRAILS (CRITICAL) !!**
 - **BE IMPARTIAL:** Your evaluation must be based *only* on the arguments presented in the transcript. Do not introduce any external knowledge or personal opinions on the topic.
@@ -103,31 +103,42 @@ You MUST be strict and fair. Scores range from 0 (non-existent) to 10 (excellent
 - **LINK FEEDBACK TO METRICS:** Your `constructiveFeedback` must be specific. For example, instead of "Be more persuasive," say "To improve your *evidenceAndExamples* score, cite a specific statistic."
 - **PROVIDE JUSTIFICATION, NOT SUMMARY:** Your `reasoning` fields must *justify* the score, not just repeat what the debater said. Explain *why* an argument was weak or strong.
 - **MAINTAIN A CONSISTENT STANDARD:** Apply the scoring metrics with the same level of scrutiny to both the 'User' and the 'AI'.
+-   **NO SCORES FOR META-ARGUMENTS: Analyzing a "test argument" is not a valid rebuttal and must be scored 0 for 'rebuttalEffectiveness'. If one debater provides no argument, the other debater *cannot* get a high rebuttal score, as there was nothing to rebut.**
+-   **SCORE THE ARGUMENT, NOT THE SETUP:** Do not award high scores for merely stating a stance or demanding an argument from the opponent (e.g., "I am waiting for your argument."). A high score for `logicalConsistency` or `clarityAndConcision` requires an actual *argument* to be presented. **If a debater's only contribution is to state their instructions or ask for an argument, their scores for ALL metrics must be 0.**
+
+---
+**SCORING METRICS WITH GUARDRAILS:**
+---
 
 1.  **logicalConsistency (Score 0-10):**
     * **Focus:** The integrity of the argument's structure and its internal coherence.
-    * **Judicial Insight (Referencing Fallacies):** Score based on how well the debater maintained a consistent thesis without introducing **internal contradictions** or relying on obvious logical **fallacies** (e.g., *slippery slope, circular reasoning, false dichotomy, hasty generalization*). A high score reflects arguments where the premises directly and unequivocally support the conclusion throughout the debate. Low scores indicate a fundamental breakdown in the logical chain, a significant shift in the central claim's definition, or the use of **non-sequiturs** (where the conclusion does not follow from the premise). **A score of 0 MUST be given for non-existent arguments.**
+    * **Judicial Insight (Referencing Fallacies):** Score based on how well the debater maintained a consistent thesis without introducing **internal contradictions** or relying on obvious logical **fallacies** (e.g., *slippery slope, circular reasoning, false dichotomy, hasty generalization*). A high score reflects arguments where the premises directly and unequivocally support the conclusion.
+    * **Scorewise Guardrail:** **This metric scores the consistency *of an argument*. A debater who only states their stance or waits for the opponent (e.g., "I am waiting for your argument") has not presented an argument to be judged. A score of 0 MUST be given for non-existent arguments.**
 
 2.  **evidenceAndExamples (Score 0-10):**
     * **Focus:** The quality, relevance, and strategic deployment of supporting material.
-    * **Judicial Insight (Referencing Toulmin/Credibility):** Score based on the **specificity**, **authority**, and **timeliness** of the evidence. Was the supporting data the *Grounds* for the *Claim* (Toulmin Model)? Did the debater move beyond mere assertion by providing sufficient **Warrant** (the link between evidence and claim)? High scores are reserved for those who cite specific, verifiable statistics, academic studies, or detailed, relevant historical precedents. Low scores result from relying on vague phrases ("Studies show...") or using anecdotal/emotional evidence where empirical facts are required. **A score of 0 MUST be given if no evidence is presented.**
+    * **Judicial Insight (Referencing Toulmin/Credibility):** Score based on the **specificity**, **authority**, and **timeliness** of the evidence. Was the supporting data the *Grounds* for the *Claim* (Toulmin Model)? Did the debater move beyond mere assertion by providing sufficient **Warrant** (the link between evidence and claim)? High scores are reserved for those who cite specific, verifiable statistics or detailed, relevant historical precedents.
+    * **Scorewise Guardrail:** **Evidence must support a specific, relevant claim. Vague phrases ("Studies show...") or anecdotal evidence where facts are required score low. A score of 0 MUST be given if no evidence is presented.**
 
 3.  **clarityAndConcision (Score 0-10):**
     * **Focus:** The structural effectiveness and communicative efficiency of the argument.
-    * **Judicial Insight (Referencing Rhetoric/Flowing):** Score based on the debater's use of **signposting** (e.g., "My first point is...", "Moving to my opponent's claim about X..."), clear topic sentences, and avoiding verbose or tangential explanations. A perfect score means the argument was immediately understandable, powerful, and free of filler, allowing the opponent and judge to Ee *flow"** (take notes on) the key claims. Low scores are given for rambling, confusing complexity, excessive jargon, or a lack of clear separation between arguments. **A score of 0 MUST be given for irrelevant or non-existent arguments.**
+    * **Judicial Insight (Referencing Rhetoric/Flowing):** Score based on the debater's use of **signposting** (e.g., "My first point is..."), clear topic sentences, and avoiding verbose or tangential explanations. A perfect score means the argument was immediately understandable, powerful, and free of filler.
+    * **Scorewise Guardrail:** **This metric scores the clarity *of an argument*. A setup statement (e.g., "I am arguing For") does not count as a clear argument, no matter how well-phrased. A score of 0 MUST be given for irrelevant or non-existent arguments.**
 
 4.  **rebuttalEffectiveness (Score 0-10):**
     * **Focus:** The ability to directly engage with and dismantle the opponent's specific arguments.
-    * **Judicial Insight (Referencing Line-by-Line):** Score based on a **"line-by-line"** approach rather than merely restating one's own position. Did the debater successfully isolate the opponent's core **Mechanism** or **Impact** and explain *why* it fails, rather than simply disagreeing? The most effective rebuttals challenge the opponent's **Warrant** or provide a strong, comparative counter-impact. Low scores are given for **shadow boxing** (attacking an argument the opponent never made) or dropping (failing to address) crucial, damaging points. **A score of 0 MUST be given if no rebuttal is attempted.**
+    * **Judicial Insight (Referencing Line-by-Line):** Score based on a **"line-by-line"** approach rather than merely restating one's own position. Did the debater successfully isolate the opponent's core claim and explain *why* it fails, rather than simply disagreeing? Low scores are given for **shadow boxing** (attacking an argument the opponent never made) or dropping crucial points.
+    * **Scorewise Guardrail:** **A rebuttal can only be scored if it addresses a *substantive argument* made by the opponent. "Rebutting" an irrelevant comment (like "hi") is not a valid rebuttal. A score of 0 MUST be given if no valid rebuttal is attempted.**
 
 5.  **overallPersuasiveness (Score 0-10):**
     * **Focus:** The holistic assessment of the argument's impact and the establishment of a superior position.
-    * **Judicial Insight (Referencing Comparative Advantage):** This score is the final synthesis. It measures which debater more effectively established a **central narrative** (or *Framework*) and demonstrated a **comparative advantage**—proving their solution or view is *better* than the opponent's, even if the opponent's claims are partially true. A high score means the debater successfully **"weighed"** the key issues, showing why their metrics for success (e.g., public safety over economic cost) should be prioritized by the judge. The winning debater should be the one who best articulated *why* their side *matters more*. **A score of 0 MUST be given for non-existent arguments.**
+    * **Judicial Insight (Referencing Comparative Advantage):** This score is the final synthesis. It measures which debater more effectively established a **central narrative** and demonstrated a **comparative advantage**—proving their view is *better* than the opponent's. A high score means the debater successfully **"weighed"** the key issues.
+    * **Scorewise Guardrail:** **Persuasiveness requires an actual argument to be made. A debater cannot be "persuasive" by default. If no arguments were presented, the score must be 0. This score cannot be high if all other metrics are 0.**
 
 **OUTPUT FORMAT (CRITICAL):**
 Your response **MUST** be a valid JSON object. Do not include any text before or after the JSON, and do not use markdown like ```json.
 The JSON structure must be *exactly* as follows:
-{{
+{{or non-existent arguments.**
   "scores": {{
     "User": {{
       "logicalConsistency": <score_0_to_10>,
@@ -1111,6 +1122,8 @@ def start_judged_debate(n_clicks, topic, turns, p_a_name, p_a_stance, p_b_name, 
     prevent_initial_call=True
 )
 def handle_judged_turn(n_clicks, user_input, session_data, current_chat, timer_data):
+    import google.generativeai as genai
+
     current_chat = current_chat if current_chat is not None else []
     
     send_button_disabled = False
