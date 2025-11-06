@@ -7,10 +7,19 @@ judge_mode_layout = html.Div(className='layout-wrapper', children=[
     html.Div(className='main-container', children=[
         
         # --- Stores for STT. REUSING IDs from practice_room ---
-        # This is fine because the pages are never loaded at the same time.
-        # This allows recorder.js to work on this page for free.
         dcc.Store(id='stt-output-store'),
         dcc.Store(id='timer-store'),
+
+        # --- POPUP ADDED HERE ---
+        # This hidden dialog will be triggered by callbacks if API keys are missing
+        dcc.ConfirmDialog(
+            id='api-key-error-popup',
+            message='Error: API Key is missing. Please go to Settings.',
+            # This 'cancel_n_clicks' makes it just an "OK" button
+            cancel_n_clicks=0, 
+            submit_n_clicks=0,
+        ),
+        # --- END OF ADDITION ---
         
         html.Div(className='card practice-card', children=[
             # This outer div contains both the setup and the chat interface
@@ -72,8 +81,6 @@ judge_mode_layout = html.Div(className='layout-wrapper', children=[
                 ]),
 
                 # --- CHAT INTERFACE UI (Hidden by default) ---
-                # This reuses the exact same layout and IDs as practice_room.py
-                # This is so recorder.js and STT callbacks work automatically.
                 html.Div(id='judge-interface-div', style={'display': 'none'}, children=[
                     html.H3(id='judge-topic-display'),
                     
@@ -83,14 +90,12 @@ judge_mode_layout = html.Div(className='layout-wrapper', children=[
                     html.Div(id='judge-chat-window', className='chat-window'), # Unique ID
                     
                     # --- *** START OF FIX *** ---
-                    # The Textarea is NO LONGER wrapped
                     dcc.Textarea(
                         id='user-input-textarea', # REUSED ID
                         placeholder='Type argument here...',
                         className='textarea-field'
                     ),
                     
-                    # This new Loading component will ONLY trigger during transcription
                     dcc.Loading(
                         id="loading-stt", # This ID is fine to reuse
                         type="default",

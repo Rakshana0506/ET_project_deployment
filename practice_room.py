@@ -9,6 +9,17 @@ practice_layout = html.Div(className='layout-wrapper', children=[
         # This dcc.Store must be outside the hidden div so it always loads
         dcc.Store(id='stt-output-store'),
         dcc.Store(id='timer-store'),
+
+        # --- POPUP ADDED HERE ---
+        # This hidden dialog will be triggered by callbacks if API keys are missing
+        dcc.ConfirmDialog(
+            id='api-key-error-popup',
+            message='Error: API Key is missing. Please go to Settings.',
+            # This 'cancel_n_clicks' makes it just an "OK" button
+            cancel_n_clicks=0, 
+            submit_n_clicks=0,
+        ),
+        # --- END OF ADDITION ---
         
         html.Div(className='card practice-card', children=[
             # This outer div contains both the setup and the chat interface

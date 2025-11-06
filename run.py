@@ -16,6 +16,7 @@ from register import register_layout
 from home import home_layout
 from login import login_layout
 from practice_room import practice_layout
+from manual import manual_layout
 from judge_mode import judge_mode_layout 
 from practice_dashboard import practice_dashboard_layout
 from judge_dashboard import judge_dashboard_layout
@@ -66,6 +67,8 @@ def display_page(pathname, session_data):
     # --- NEW: Route for the settings page ---
     elif pathname == '/settings':
         return settings_layout
+    elif pathname == '/manual':
+        return manual_layout
         
     elif pathname == '/practice-results':
         return practice_dashboard_layout

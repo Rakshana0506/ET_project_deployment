@@ -195,7 +195,7 @@ def save_debate_to_db(username, debate_state, chat_history, final_results):
             state_json,
             history_json,
             results_json,
-            datetime.now()
+            datetime.now(pytz.utc) # <-- FIX 1: USE UTC TIMEZONE
         ))
         con.commit()
         print("--- Debate history saved successfully. ---")
@@ -323,10 +323,11 @@ def logout_user(n_clicks, session_data):
     [Input('practice-mode-button', 'n_clicks'),
      Input('judge-mode-button', 'n_clicks'),
      Input('history-button', 'n_clicks'),
-     Input('settings-button', 'n_clicks')], # <-- NEW
+     Input('settings-button', 'n_clicks'), # <-- NEW
+     Input('user-manual-button', 'n_clicks')],
     prevent_initial_call=True
 )
-def navigate_from_home(practice_clicks, judge_clicks, history_clicks, settings_clicks): # <-- NEW
+def navigate_from_home(practice_clicks, judge_clicks, history_clicks, settings_clicks, manual_clicks): # <-- NEW
     ctx = callback_context
     if not ctx.triggered:
         return no_update
@@ -340,6 +341,8 @@ def navigate_from_home(practice_clicks, judge_clicks, history_clicks, settings_c
         return '/history'
     elif button_id == 'settings-button': # <-- NEW
         return '/settings'
+    elif button_id == 'user-manual-button':  # <-- 3. ADD THE LOGIC TO NAVIGATE
+        return '/manual'
     return no_update
 
 @app.callback(
@@ -412,6 +415,18 @@ def navigate_settings_to_home(n_clicks):
     if n_clicks > 0:
         return '/home'
     return no_update
+# --- 4. ADD THIS ENTIRE NEW CALLBACK ---
+# This code block goes right after the navigate_settings_to_home callback
+@app.callback(
+    Output('url', 'pathname', allow_duplicate=True),
+    Input('manual-back-home-button', 'n_clicks'),  # <-- HERE IT IS
+    prevent_initial_call=True
+)
+def navigate_manual_to_home(n_clicks):
+    if n_clicks > 0:
+        return '/home'
+    return no_update
+# --- END OF NEW CALLBACK ---
 
 @app.callback(
     Output('url', 'pathname', allow_duplicate=True),
@@ -457,6 +472,44 @@ def save_api_keys_to_session(n_clicks, google_key, azure_key, azure_region, sess
     
     return session_data, html.P("Keys saved successfully for this session!", style={'color': 'green'})
 
+
+# --- NEW CALLBACK: SHOWS API KEY WARNING ON HOME PAGE ---
+# --- NEW CALLBACK: SHOWS DYNAMIC API KEY WARNING ON HOME PAGE ---
+# --- This callback checks for keys and fixes the "flicker" problem ---
+@app.callback(
+    Output('api-key-warning-container', 'children'),
+    [Input('url', 'pathname'),
+     Input('session-storage', 'data')]
+)
+def show_api_key_warning(pathname, session_data):
+    # Only run this check when the user is on the home page
+    if pathname == '/home':
+        session_data = session_data or {}
+        google_key = session_data.get('google_key')
+        azure_key = session_data.get('azure_key')
+
+        # If keys are missing, show the styled warning message
+        if not google_key or not azure_key:
+            return html.Div([
+                html.P("⚠️ API Keys Missing!", 
+                       style={'fontWeight': 'bold', 'color': 'var(--text-primary)', 'margin': '0 0 5px 0'}),
+                html.P("The app will not work until you add your keys in Settings.", 
+                       style={'color': 'var(--text-secondary)', 'margin': '0 0 15px 0'}),
+                dcc.Link(
+                    # This button uses your existing CSS, but the .api-warning-box class will resize it
+                    html.Button("Go to Settings Now", className="btn btn-primary"), 
+                    href="/settings", 
+                    style={'textDecoration': 'none'}
+                )
+            ], className='api-warning-box') # We will style this class in CSS
+        
+        # If on /home AND keys are present, return an empty list to clear the warning
+        return []
+    
+    # --- THE FLICKER FIX ---
+    # If we are NOT on the home page, do not send any update.
+    # This stops the callback from clearing its own output during the page-load flicker.
+    return no_update
 
 # --- *** MODIFIED: SPEECH-TO-TEXT CALLBACK *** ---
 # --- Now takes keys from session-storage ---
@@ -557,13 +610,12 @@ def transcribe_audio_from_base64(base64_audio_data, azure_key, azure_region):
         print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
         return None
 
-# --- *** MODIFIED: STT Callback now gets keys from session *** ---
-# --- *** START OF FIX *** ---
-# This callback now outputs to the new 'stt-loading-output' div
-# This triggers the 'loading-stt' spinner ONLY during transcription.
+# --- *** MODIFIED: STT Callback now triggers popup on error *** ---
 @app.callback(
     [Output('user-input-textarea', 'value', allow_duplicate=True),
-     Output('stt-loading-output', 'children')], # <-- ADDED THIS OUTPUT
+     Output('stt-loading-output', 'children'),
+     Output('api-key-error-popup', 'displayed', allow_duplicate=True),
+     Output('api-key-error-popup', 'message', allow_duplicate=True)],
     Input('stt-output-store', 'data'), 
     [State('user-input-textarea', 'value'),
      State('session-storage', 'data')],
@@ -577,7 +629,9 @@ def handle_audio_transcript(base64_audio_data, current_text, session_data):
 
     if not azure_key or not azure_region:
         print("STT Error: No Azure keys found in session. Go to Settings.")
-        return no_update, None # <-- RETURN 2 VALUES
+        error_msg = "ERROR: Azure Speech keys are not set. Please go to the Settings page."
+        # Return 4 values: (textarea, loading, popup_displayed, popup_message)
+        return no_update, None, True, error_msg 
 
     transcript = transcribe_audio_from_base64(base64_audio_data, azure_key, azure_region)
     
@@ -585,18 +639,43 @@ def handle_audio_transcript(base64_audio_data, current_text, session_data):
     
     if transcript:
         if current_text:
-            return f"{current_text} {transcript}", None # <-- RETURN 2 VALUES
-        return transcript, None # <-- RETURN 2 VALUES
+            # Success: (textarea, loading, popup_displayed, popup_message)
+            return f"{current_text} {transcript}", None, no_update, no_update
+        # Success: (textarea, loading, popup_displayed, popup_message)
+        return transcript, None, no_update, no_update
     
-    return no_update, None # <-- RETURN 2 VALUES
-# --- *** END OF FIX *** ---
+    # --- Transcription failed (e.g., invalid key or no speech) ---
+    else:
+        print("STT Error: Transcription returned None.")
+        fail_msg = "Transcription failed. (No speech detected, or Azure keys are invalid)"
+        # Failure: (textarea, loading, popup_displayed, popup_message)
+        return no_update, None, True, fail_msg 
+# --- *** END OF STT CALLBACK MODIFICATION *** ---
 
-# --- END OF STT CALLBACK ---
 
+# --- *** CLIENT-SIDE CALLBACKS TO CLEAR TEXT AREA *** ---
+app.clientside_callback(
+    """
+    function(n_clicks) {
+        return "";
+    }
+    """,
+    Output('user-input-textarea', 'value', allow_duplicate=True),
+    [Input('send-argument-button', 'n_clicks')],
+    prevent_initial_call=True
+)
 
-# --- *** START OF FIX *** ---
-# REMOVED the broken clientside_callbacks
-# --- *** END OF FIX *** ---
+app.clientside_callback(
+    """
+    function(n_clicks) {
+        return "";
+    }
+    """,
+    Output('user-input-textarea', 'value', allow_duplicate=True),
+    [Input('judge-send-argument-btn', 'n_clicks')],
+    prevent_initial_call=True
+)
+# --- *** END OF CLIENT-SIDE CALLBACKS *** ---
 
 
 # --- PRACTICE MODE CALLBACKS (AI vs Human) ---
@@ -647,10 +726,9 @@ def start_practice_debate(n_clicks, topic, stance, turns, session_data):
             results_button_style, send_button_disabled, textarea_disabled)
 
 
-# --- *** MODIFIED: Practice turn now uses session key *** ---
+# --- *** MODIFIED: Practice turn now triggers popup on error *** ---
 @app.callback(
     [Output('chat-window', 'children', allow_duplicate=True),
-     Output('user-input-textarea', 'value', allow_duplicate=True), # <-- *** FIX: ADDED THIS BACK ***
      Output('session-storage', 'data', allow_duplicate=True),
      Output('loading-output', 'children'),
      Output('url', 'pathname', allow_duplicate=True),
@@ -658,7 +736,10 @@ def start_practice_debate(n_clicks, topic, stance, turns, session_data):
      Output('view-results-button', 'style', allow_duplicate=True),
      Output('send-argument-button', 'disabled', allow_duplicate=True),
      Output('user-input-textarea', 'disabled', allow_duplicate=True),
-     Output('timer-store', 'data', allow_duplicate=True)], 
+     Output('timer-store', 'data', allow_duplicate=True),
+     # --- NEW POPUP OUTPUTS ---
+     Output('api-key-error-popup', 'displayed', allow_duplicate=True),
+     Output('api-key-error-popup', 'message', allow_duplicate=True)], 
     Input('send-argument-button', 'n_clicks'),
     [State('user-input-textarea', 'value'),
      State('session-storage', 'data'),
@@ -675,32 +756,33 @@ def handle_practice_turn(n_clicks, user_input, session_data, current_chat, timer
     send_button_disabled = False
     textarea_disabled = False
     
-    # --- *** MODIFIED: Get key from session *** ---
+    # --- Get key from session ---
     session_data = session_data or {}
     google_key = session_data.get('google_key')
     
+    # --- MODIFIED ERROR HANDLING ---
     if not google_key:
         error_msg = "ERROR: Google API Key not set. Please go to the Settings page."
-        current_chat.append(html.P(error_msg, style={'color': 'red', 'textAlign': 'center'}))
-        # --- *** START OF FIX *** ---
-        # Return 9 values
-        return current_chat, no_update, no_update, None, no_update, no_update, no_update, no_update, None
-        # --- *** END OF FIX *** ---
+        # Return 10 values
+        return (no_update, no_update, None, no_update, 
+                no_update, no_update, no_update, None, 
+                True, error_msg)
     
     try:
         genai.configure(api_key=google_key)
     except Exception as e:
-        error_msg = f"ERROR: Invalid Google API Key: {e}"
-        current_chat.append(html.P(error_msg, style={'color': 'red', 'textAlign': 'center'}))
-        # --- *** START OF FIX *** ---
-        return current_chat, no_update, no_update, None, no_update, no_update, no_update, no_update, None
-        # --- *** END OF FIX *** ---
-    # --- *** END MODIFICATION ---
+        error_msg = f"ERROR: Invalid Google API Key provided. Please check Settings."
+        print(f"Google Key Error: {e}")
+        # Return 10 values
+        return (no_update, no_update, None, no_update, 
+                no_update, no_update, no_update, None, 
+                True, error_msg)
     
     if not user_input or 'debate_state' not in session_data:
-        # --- *** START OF FIX *** ---
-        return no_update, no_update, no_update, None, no_update, no_update, no_update, no_update, None
-        # --- *** END OF FIX *** ---
+        # Return 10 values
+        return (no_update, no_update, None, no_update, 
+                no_update, no_update, no_update, None, 
+                no_update, no_update)
 
     debate_state = session_data['debate_state']
     chat_history = session_data.get('chat_history', []) 
@@ -729,17 +811,14 @@ def handle_practice_turn(n_clicks, user_input, session_data, current_chat, timer
             system_instruction=opponent_system_prompt
         )
         
-        # --- *** START OF FIX *** ---
-        # Create a clean history list for the API
-        api_history = []
-        for entry in chat_history[:-1]: # Go through all but the last message
-            api_history.append({
-                'role': entry['role'],
-                'parts': entry['parts']
-            })
-        # Pass the clean list to the API
-        chat_session = dynamic_chat_model.start_chat(history=api_history)
-        # --- *** END OF FIX *** ---
+        # --- START OF FIX (ValueError: time) ---
+        dirty_previous_history = chat_history[:-1] 
+        clean_previous_history = [
+            {'role': msg['role'], 'parts': msg['parts']} 
+            for msg in dirty_previous_history
+        ]
+        chat_session = dynamic_chat_model.start_chat(history=clean_previous_history)
+        # --- END OF FIX ---
         
         try:
             response = chat_session.send_message(user_input) 
@@ -747,6 +826,12 @@ def handle_practice_turn(n_clicks, user_input, session_data, current_chat, timer
         except Exception as e:
             ai_response_text = f"An error occurred while generating the AI's final response: {e}"
             print(f"API Error (Final Turn): {e}")
+            # Check if it's an API key error
+            if "API key" in str(e):
+                error_msg = "ERROR: Google API Key is invalid or expired. Please check Settings."
+                return (no_update, no_update, None, no_update, 
+                        no_update, no_update, no_update, None, 
+                        True, error_msg)
 
         # 4. Add Final AI Response
         ai_message = f"AI ({debate_state['opponent_stance']}): {ai_response_text}"
@@ -755,7 +840,6 @@ def handle_practice_turn(n_clicks, user_input, session_data, current_chat, timer
         
         print("--- Calling get_judgment with COMPLETE history ---")
         try:
-            # --- *** MODIFIED: Pass key to judge *** ---
             judgment = get_judgment(debate_state, chat_history, google_key)
         except Exception as e:
             print(f"--- handle_turn CAUGHT AN ERROR: {e} ---")
@@ -789,10 +873,10 @@ def handle_practice_turn(n_clicks, user_input, session_data, current_chat, timer
         send_button_disabled = True
         textarea_disabled = True
         
-        # --- *** START OF FIX *** ---
-        # Return "" to clear the text area
-        return current_chat, "", session_data, None, no_update, results_button_style, send_button_disabled, textarea_disabled, None
-        # --- *** END OF FIX *** ---
+        # Return 10 values
+        return (current_chat, session_data, None, no_update, 
+                results_button_style, send_button_disabled, textarea_disabled, None,
+                no_update, no_update)
 
     # --- NORMAL TURN LOGIC (AI Responds) ---
     
@@ -807,17 +891,14 @@ def handle_practice_turn(n_clicks, user_input, session_data, current_chat, timer
         system_instruction=opponent_system_prompt
     )
     
-    # --- *** START OF FIX *** ---
-    # Create a clean history list for the API
-    api_history = []
-    for entry in chat_history[:-1]: # Go through all but the last message
-        api_history.append({
-            'role': entry['role'],
-            'parts': entry['parts']
-        })
-    # Pass the clean list to the API
-    chat_session = dynamic_chat_model.start_chat(history=api_history)
-    # --- *** END OF FIX *** ---
+    # --- START OF FIX (ValueError: time) ---
+    dirty_previous_history = chat_history[:-1] 
+    clean_previous_history = [
+        {'role': msg['role'], 'parts': msg['parts']} 
+        for msg in dirty_previous_history
+    ]
+    chat_session = dynamic_chat_model.start_chat(history=clean_previous_history)
+    # --- END OF FIX ---
     
     try:
         response = chat_session.send_message(user_input) 
@@ -825,6 +906,13 @@ def handle_practice_turn(n_clicks, user_input, session_data, current_chat, timer
     except Exception as e:
         ai_response_text = f"An error occurred while generating the AI response: {e}"
         print(f"API Error: {e}")
+        # Check if it's an API key error
+        if "API key" in str(e):
+            error_msg = "ERROR: Google API Key is invalid or expired. Please check Settings."
+            return (no_update, no_update, None, no_update, 
+                    no_update, no_update, no_update, None, 
+                    True, error_msg)
+
 
     # 5. Add AI response
     ai_message = f"AI ({debate_state['opponent_stance']}): {ai_response_text}"
@@ -832,10 +920,10 @@ def handle_practice_turn(n_clicks, user_input, session_data, current_chat, timer
     chat_history.append({'role': 'model', 'parts': [ai_response_text]})
     session_data['chat_history'] = chat_history 
     
-    # --- *** START OF FIX *** ---
-    # Return "" to clear the text area
-    return current_chat, "", session_data, None, no_update, results_button_style, send_button_disabled, textarea_disabled, None
-    # --- *** END OF FIX *** ---
+    # Return 10 values
+    return (current_chat, session_data, None, no_update, 
+            results_button_style, send_button_disabled, textarea_disabled, None,
+            no_update, no_update)
 
 
 # --- *** NEW: JUDGE MODE ("Hot-Seat") CALLBACKS *** ---
@@ -880,11 +968,11 @@ def start_judged_debate(n_clicks, topic, turns, p_a_name, p_a_stance, p_b_name, 
     debate_state = {
         'mode': 'judge', 
         'topic': topic,
-        'user_stance': p_a_stance,      # Player A's stance
-        'opponent_stance': p_b_stance,    # Player B's stance
+        'user_stance': p_a_stance,     # Player A's stance
+        'opponent_stance': p_b_stance,   # Player B's stance
         'player_A_name': p_a_name,
         'player_B_name': p_b_name,
-        'total_turns': int(turns) * 2,    # Total turns for *both* players
+        'total_turns': int(turns) * 2,   # Total turns for *both* players
         'current_turn_count': 0,
         'current_player_role': 'user'     # 'user' = Player A, 'model' = Player B
     }
@@ -903,17 +991,19 @@ def start_judged_debate(n_clicks, topic, turns, p_a_name, p_a_stance, p_b_name, 
             turn_display, session_data)
 
 
-# Callback 3: Handle a Judged Turn (Human vs Human)
+# --- *** MODIFIED: Judged turn now triggers popup on error *** ---
 @app.callback(
     [Output('judge-chat-window', 'children', allow_duplicate=True),
-     Output('user-input-textarea', 'value', allow_duplicate=True), # <-- *** FIX: ADDED THIS BACK ***
      Output('session-storage', 'data', allow_duplicate=True),
      Output('judge-turn-display', 'children', allow_duplicate=True),
      Output('judge-loading-output', 'children'),
      Output('timer-store', 'data', allow_duplicate=True), 
      Output('judge-send-argument-btn', 'disabled', allow_duplicate=True),
      Output('user-input-textarea', 'disabled', allow_duplicate=True),
-     Output('judge-end-debate-btn', 'style', allow_duplicate=True)],
+     Output('judge-end-debate-btn', 'style', allow_duplicate=True),
+     # --- NEW POPUP OUTPUTS ---
+     Output('api-key-error-popup', 'displayed', allow_duplicate=True),
+     Output('api-key-error-popup', 'message', allow_duplicate=True)],
     Input('judge-send-argument-btn', 'n_clicks'),
     [State('user-input-textarea', 'value'),
      State('session-storage', 'data'),
@@ -929,10 +1019,10 @@ def handle_judged_turn(n_clicks, user_input, session_data, current_chat, timer_d
     end_button_style = {'display': 'none', 'marginTop': '10px'}
 
     if not user_input or not session_data or 'debate_state' not in session_data:
-        # --- *** START OF FIX *** ---
-        # Return 9 values
-        return no_update, no_update, no_update, no_update, None, None, no_update, no_update, no_update
-        # --- *** END OF FIX *** ---
+        # Return 10 values
+        return (no_update, no_update, no_update, None, None, 
+                no_update, no_update, no_update,
+                no_update, no_update)
 
     debate_state = session_data['debate_state']
     chat_history = session_data.get('chat_history', []) 
@@ -968,21 +1058,27 @@ def handle_judged_turn(n_clicks, user_input, session_data, current_chat, timer_d
     if debate_state['current_turn_count'] >= debate_state['total_turns']:
         print("--- Judged debate complete. Calling get_judgment ---")
         
-        # --- *** MODIFIED: Get key from session *** ---
+        # --- MODIFIED ERROR HANDLING ---
         google_key = session_data.get('google_key')
         if not google_key:
-            turn_display = "ERROR: Google Key not set. Cannot get judgment."
-            # Return 9 values
-            # --- *** START OF FIX *** ---
-            return (current_chat, no_update, session_data, turn_display, None, None, 
-                    True, True, end_button_style)
-            # --- *** END OF FIX *** ---
-        # --- *** END MODIFICATION ---
+            error_msg = "ERROR: Google Key not set. Cannot get judgment. Please go to Settings."
+            # Return 10 values
+            return (no_update, no_update, no_update, None, None, 
+                    True, True, no_update, 
+                    True, error_msg)
 
         try:
+            # Check for invalid key before proceeding
+            genai.configure(api_key=google_key) 
             judgment = get_judgment(debate_state, chat_history, google_key)
         except Exception as e:
             print(f"--- handle_judged_turn CAUGHT AN ERROR: {e} ---")
+            # Check if it's an API key error
+            if "API key" in str(e):
+                error_msg = "ERROR: Google API Key is invalid or expired. Please check Settings."
+                return (no_update, no_update, no_update, None, None, 
+                        True, True, no_update, 
+                        True, error_msg)
             judgment = {'error': f'Judge API/Parsing failed: {e}', 'raw_text': 'N/A'}
 
         session_data['final_results'] = judgment
@@ -1021,11 +1117,10 @@ def handle_judged_turn(n_clicks, user_input, session_data, current_chat, timer_d
     session_data['debate_state'] = debate_state
     session_data['chat_history'] = chat_history 
 
-    # --- *** START OF FIX *** ---
-    # Return "" to clear the text area
-    return (current_chat, "", session_data, turn_display, None, None, 
-            send_button_disabled, textarea_disabled, end_button_style)
-    # --- *** END OF FIX *** ---
+    # Return 10 values
+    return (current_chat, session_data, turn_display, None, None, 
+            send_button_disabled, textarea_disabled, end_button_style,
+            no_update, no_update)
 
 
 # --- *** END OF JUDGE MODE CALLBACKS *** ---
@@ -1033,7 +1128,6 @@ def handle_judged_turn(n_clicks, user_input, session_data, current_chat, timer_d
 
 # --- JUDGMENT & SCORING CALLBACKS (Shared) ---
 
-# --- *** MODIFIED: Now takes google_key as an argument *** ---
 def get_judgment(debate_state, chat_history, google_key):
     import google.generativeai as genai
     
