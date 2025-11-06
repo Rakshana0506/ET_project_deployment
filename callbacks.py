@@ -595,37 +595,7 @@ def handle_audio_transcript(base64_audio_data, current_text, session_data):
 
 
 # --- *** START OF FIX *** ---
-# --- NEW CLIENT-SIDE CALLBACKS TO CLEAR TEXT AREA ---
-# This instantly clears the text after sending,
-# preventing the "send" button from triggering the STT loading spinner.
-
-# Callback 1: For Practice Room
-app.clientside_callback(
-    """
-    function(n_clicks) {
-        // This function is triggered by the practice send button.
-        // It simply returns an empty string to clear the textarea.
-        return "";
-    }
-    """,
-    Output('user-input-textarea', 'value', allow_duplicate=True),
-    [Input('send-argument-button', 'n_clicks')],
-    prevent_initial_call=True
-)
-
-# Callback 2: For Judge Mode
-app.clientside_callback(
-    """
-    function(n_clicks) {
-        // This function is triggered by the judge send button.
-        // It simply returns an empty string to clear the textarea.
-        return "";
-    }
-    """,
-    Output('user-input-textarea', 'value', allow_duplicate=True),
-    [Input('judge-send-argument-btn', 'n_clicks')],
-    prevent_initial_call=True
-)
+# REMOVED the broken clientside_callbacks
 # --- *** END OF FIX *** ---
 
 
@@ -680,9 +650,7 @@ def start_practice_debate(n_clicks, topic, stance, turns, session_data):
 # --- *** MODIFIED: Practice turn now uses session key *** ---
 @app.callback(
     [Output('chat-window', 'children', allow_duplicate=True),
-     # --- *** START OF FIX: REMOVED TEXTAREA OUTPUT *** ---
-     # Output('user-input-textarea', 'value', allow_duplicate=True), 
-     # --- *** END OF FIX *** ---
+     Output('user-input-textarea', 'value', allow_duplicate=True), # <-- *** FIX: ADDED THIS BACK ***
      Output('session-storage', 'data', allow_duplicate=True),
      Output('loading-output', 'children'),
      Output('url', 'pathname', allow_duplicate=True),
@@ -715,8 +683,8 @@ def handle_practice_turn(n_clicks, user_input, session_data, current_chat, timer
         error_msg = "ERROR: Google API Key not set. Please go to the Settings page."
         current_chat.append(html.P(error_msg, style={'color': 'red', 'textAlign': 'center'}))
         # --- *** START OF FIX *** ---
-        # Return 8 values, not 9
-        return current_chat, no_update, None, no_update, no_update, no_update, no_update, None
+        # Return 9 values
+        return current_chat, no_update, no_update, None, no_update, no_update, no_update, no_update, None
         # --- *** END OF FIX *** ---
     
     try:
@@ -725,13 +693,13 @@ def handle_practice_turn(n_clicks, user_input, session_data, current_chat, timer
         error_msg = f"ERROR: Invalid Google API Key: {e}"
         current_chat.append(html.P(error_msg, style={'color': 'red', 'textAlign': 'center'}))
         # --- *** START OF FIX *** ---
-        return current_chat, no_update, None, no_update, no_update, no_update, no_update, None
+        return current_chat, no_update, no_update, None, no_update, no_update, no_update, no_update, None
         # --- *** END OF FIX *** ---
     # --- *** END MODIFICATION ---
     
     if not user_input or 'debate_state' not in session_data:
         # --- *** START OF FIX *** ---
-        return no_update, no_update, None, no_update, no_update, no_update, no_update, None
+        return no_update, no_update, no_update, None, no_update, no_update, no_update, no_update, None
         # --- *** END OF FIX *** ---
 
     debate_state = session_data['debate_state']
@@ -761,8 +729,17 @@ def handle_practice_turn(n_clicks, user_input, session_data, current_chat, timer
             system_instruction=opponent_system_prompt
         )
         
-        previous_history = chat_history[:-1] 
-        chat_session = dynamic_chat_model.start_chat(history=previous_history)
+        # --- *** START OF FIX *** ---
+        # Create a clean history list for the API
+        api_history = []
+        for entry in chat_history[:-1]: # Go through all but the last message
+            api_history.append({
+                'role': entry['role'],
+                'parts': entry['parts']
+            })
+        # Pass the clean list to the API
+        chat_session = dynamic_chat_model.start_chat(history=api_history)
+        # --- *** END OF FIX *** ---
         
         try:
             response = chat_session.send_message(user_input) 
@@ -813,7 +790,8 @@ def handle_practice_turn(n_clicks, user_input, session_data, current_chat, timer
         textarea_disabled = True
         
         # --- *** START OF FIX *** ---
-        return current_chat, session_data, None, no_update, results_button_style, send_button_disabled, textarea_disabled, None
+        # Return "" to clear the text area
+        return current_chat, "", session_data, None, no_update, results_button_style, send_button_disabled, textarea_disabled, None
         # --- *** END OF FIX *** ---
 
     # --- NORMAL TURN LOGIC (AI Responds) ---
@@ -828,8 +806,19 @@ def handle_practice_turn(n_clicks, user_input, session_data, current_chat, timer
         'gemini-2.0-flash', 
         system_instruction=opponent_system_prompt
     )
-    previous_history = chat_history[:-1] 
-    chat_session = dynamic_chat_model.start_chat(history=previous_history)
+    
+    # --- *** START OF FIX *** ---
+    # Create a clean history list for the API
+    api_history = []
+    for entry in chat_history[:-1]: # Go through all but the last message
+        api_history.append({
+            'role': entry['role'],
+            'parts': entry['parts']
+        })
+    # Pass the clean list to the API
+    chat_session = dynamic_chat_model.start_chat(history=api_history)
+    # --- *** END OF FIX *** ---
+    
     try:
         response = chat_session.send_message(user_input) 
         ai_response_text = response.text
@@ -844,7 +833,8 @@ def handle_practice_turn(n_clicks, user_input, session_data, current_chat, timer
     session_data['chat_history'] = chat_history 
     
     # --- *** START OF FIX *** ---
-    return current_chat, session_data, None, no_update, results_button_style, send_button_disabled, textarea_disabled, None
+    # Return "" to clear the text area
+    return current_chat, "", session_data, None, no_update, results_button_style, send_button_disabled, textarea_disabled, None
     # --- *** END OF FIX *** ---
 
 
@@ -916,9 +906,7 @@ def start_judged_debate(n_clicks, topic, turns, p_a_name, p_a_stance, p_b_name, 
 # Callback 3: Handle a Judged Turn (Human vs Human)
 @app.callback(
     [Output('judge-chat-window', 'children', allow_duplicate=True),
-     # --- *** START OF FIX: REMOVED TEXTAREA OUTPUT *** ---
-     # Output('user-input-textarea', 'value', allow_duplicate=True),
-     # --- *** END OF FIX *** ---
+     Output('user-input-textarea', 'value', allow_duplicate=True), # <-- *** FIX: ADDED THIS BACK ***
      Output('session-storage', 'data', allow_duplicate=True),
      Output('judge-turn-display', 'children', allow_duplicate=True),
      Output('judge-loading-output', 'children'),
@@ -942,8 +930,8 @@ def handle_judged_turn(n_clicks, user_input, session_data, current_chat, timer_d
 
     if not user_input or not session_data or 'debate_state' not in session_data:
         # --- *** START OF FIX *** ---
-        # Return 8 values, not 9
-        return no_update, no_update, no_update, None, None, no_update, no_update, no_update
+        # Return 9 values
+        return no_update, no_update, no_update, no_update, None, None, no_update, no_update, no_update
         # --- *** END OF FIX *** ---
 
     debate_state = session_data['debate_state']
@@ -984,9 +972,9 @@ def handle_judged_turn(n_clicks, user_input, session_data, current_chat, timer_d
         google_key = session_data.get('google_key')
         if not google_key:
             turn_display = "ERROR: Google Key not set. Cannot get judgment."
-            # Return 8 values
+            # Return 9 values
             # --- *** START OF FIX *** ---
-            return (current_chat, session_data, turn_display, None, None, 
+            return (current_chat, no_update, session_data, turn_display, None, None, 
                     True, True, end_button_style)
             # --- *** END OF FIX *** ---
         # --- *** END MODIFICATION ---
@@ -1034,8 +1022,8 @@ def handle_judged_turn(n_clicks, user_input, session_data, current_chat, timer_d
     session_data['chat_history'] = chat_history 
 
     # --- *** START OF FIX *** ---
-    # Return 8 values
-    return (current_chat, session_data, turn_display, None, None, 
+    # Return "" to clear the text area
+    return (current_chat, "", session_data, turn_display, None, None, 
             send_button_disabled, textarea_disabled, end_button_style)
     # --- *** END OF FIX *** ---
 
